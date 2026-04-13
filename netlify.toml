@@ -5,3 +5,9 @@
 
 [functions]
   node_bundler = "esbuild"
+
+# Disable Neon/DB plugin — we use Netlify Blobs, don't need Postgres
+[[plugins]]
+  package = "neon-buildhooks"
+  [plugins.inputs]
+    disabled = true
