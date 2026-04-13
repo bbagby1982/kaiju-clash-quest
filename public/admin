@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kaiju Clash Quest - Monster Art Admin</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0a0e17; color: #e0e8f0; font-family: system-ui, sans-serif; padding: 20px; max-width: 600px; margin: 0 auto; }
+    h1 { font-size: 1.4rem; text-align: center; margin-bottom: 8px; color: #00ccff; }
+    .subtitle { text-align: center; color: #667788; font-size: 0.85rem; margin-bottom: 24px; }
+    .form-group { margin-bottom: 16px; }
+    label { display: block; font-size: 0.85rem; color: #8899aa; margin-bottom: 4px; }
+    input, select { width: 100%; padding: 10px 12px; background: #141822; border: 1px solid #2a3040; border-radius: 8px; color: #e0e8f0; font-size: 0.95rem; }
+    select { appearance: none; }
+    button { width: 100%; padding: 12px; background: linear-gradient(135deg, #0066cc, #0099ff); border: none; border-radius: 8px; color: white; font-weight: 700; font-size: 1rem; cursor: pointer; margin-top: 8px; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button:hover:not(:disabled) { background: linear-gradient(135deg, #0077dd, #00aaff); }
+    .status { margin-top: 12px; padding: 12px; border-radius: 8px; font-size: 0.85rem; }
+    .success { background: #0a2a1a; border: 1px solid #22c55e; color: #22c55e; }
+    .error { background: #2a0a0a; border: 1px solid #ef4444; color: #ef4444; }
+    .preview { margin-top: 16px; text-align: center; }
+    .preview img { max-width: 200px; border-radius: 12px; border: 2px solid #2a3040; }
+    .monster-count { text-align: center; padding: 8px; background: #141822; border-radius: 8px; margin-bottom: 16px; font-size: 0.8rem; color: #667788; }
+    .batch-section { margin-top: 32px; padding-top: 24px; border-top: 1px solid #1a2030; }
+    h2 { font-size: 1.1rem; color: #eab308; margin-bottom: 12px; }
+    textarea { width: 100%; padding: 10px 12px; background: #141822; border: 1px solid #2a3040; border-radius: 8px; color: #e0e8f0; font-size: 0.85rem; min-height: 100px; font-family: monospace; }
+  </style>
+</head>
+<body>
+  <h1>🦎 Monster Art Upload</h1>
+  <p class="subtitle">Add custom artwork to Kaiju Clash Quest</p>
+  <div id="count" class="monster-count">Loading monster data...</div>
+
+  <div class="form-group">
+    <label>Monster</label>
+    <select id="monsterId"></select>
+  </div>
+  <div class="form-group">
+    <label>Image URL (paste Canva export link or any PNG URL)</label>
+    <input type="url" id="imageUrl" placeholder="https://export-download.canva.com/..." />
+  </div>
+  <div class="form-group">
+    <label>Admin Key</label>
+    <input type="password" id="adminKey" placeholder="Enter admin key" />
+  </div>
+  <button id="uploadBtn" onclick="uploadImage()">Upload Monster Art</button>
+  <div id="status"></div>
+  <div id="preview" class="preview"></div>
+
+  <div class="batch-section">
+    <h2>Batch Upload (Advanced)</h2>
+    <p style="font-size:0.8rem; color:#667788; margin-bottom:8px;">Paste JSON array: [{"monsterId":"id","imageUrl":"url"}, ...]</p>
+    <textarea id="batchJson" placeholder='[{"monsterId":"infernox","imageUrl":"https://..."}]'></textarea>
+    <button onclick="batchUpload()" style="margin-top:8px;">Batch Upload All</button>
+    <div id="batchStatus"></div>
+  </div>
+
+  <script>
+    // Monster list - this matches the game's monster IDs
+    const monsters = [
+      "showa-godzilla","king-kong","heisei-godzilla","millennium-godzilla","monsterverse-godzilla",
+      "evolved-godzilla","burning-godzilla","kong-armed","crystal-serpent","storm-titan","sharkgera",
+      "infernox","glacius","terramoth","aquabeast","voltara","cyclonix","magmaw","frostfang",
+      "cinder","stoneheart","thunderclaw","dustdevil","leviathan","kraken-jr","jellyzilla",
+      "urchinox","crabzilla","anglerfiend","whalemoth","eel-king","barnaclopse","nautilord",
+      "sockzilla","burpasaurus","fluffernaut","pizzatron","sneezeking","napzilla","hiccupus",
+      "wobbledon","giggletron","snackmaw","bubblord","confettius","noodlezilla","bananasaur",
+      "discobeast","mechazord","dronebeast","glitchling","wirewyrm","tankzilla","junkbot",
+      "laserface","hackerfiend","geargrinder","mecha-rex","phantomaw","gloomer","skullflame",
+      "tombcrawler","nightshade","cryptkeeper","ghoulwave","dreadmoth","hexapod","wraithclaw",
+      "bonebreaker","sproutling","bloomzilla","thornback","fungiant","vinelash","petalstorm",
+      "mossback","willowwisp","rootcrusher","sapsucker","astrozilla","nebulax","cometfang",
+      "voidmaw","starweaver","lunarbeast","solartitan","galaxor","meteormaw","cosmoclaw",
+      "baby-godzilla","mini-mothra","tiny-rodan","eggzilla","hatchling","kaiju-pup",
+      "mini-mecha","pocket-ghidorah","junior-kong","little-anguirus"
+    ];
+
+    const select = document.getElementById("monsterId");
+    monsters.forEach(m => {
+      const opt = document.createElement("option");
+      opt.value = m;
+      opt.textContent = m.replace(/-/g, " ").replace(/\b\w/g, l => l.toUpperCase());
+      select.appendChild(opt);
+    });
+
+    // Check which already have images
+    async function checkImages() {
+      let hasImage = 0;
+      for (const m of monsters.slice(0, 10)) {
+        try {
+          const r = await fetch(`/api/monster-image/${m}`, { method: "HEAD" });
+          if (r.ok) hasImage++;
+        } catch {}
+      }
+      document.getElementById("count").textContent =
+        `${monsters.length} monsters total • checking artwork status...`;
+    }
+    checkImages();
+
+    async function uploadImage() {
+      const monsterId = document.getElementById("monsterId").value;
+      const imageUrl = document.getElementById("imageUrl").value;
+      const adminKey = document.getElementById("adminKey").value;
+      const status = document.getElementById("status");
+      const btn = document.getElementById("uploadBtn");
+
+      if (!imageUrl) { status.className = "status error"; status.textContent = "Please paste an image URL"; return; }
+      
+      btn.disabled = true;
+      btn.textContent = "Uploading...";
+      status.className = "status"; status.textContent = "";
+
+      try {
+        const res = await fetch("/api/admin/upload-monster-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-admin-key": adminKey },
+          body: JSON.stringify({ monsterId, imageUrl }),
+        });
+        const data = await res.json();
+        if (res.ok && data.results?.[0]?.status === "success") {
+          status.className = "status success";
+          status.textContent = `✅ ${monsterId} artwork saved! It's now live in the game.`;
+          document.getElementById("preview").innerHTML =
+            `<img src="/api/monster-image/${monsterId}?t=${Date.now()}" alt="${monsterId}" />`;
+        } else {
+          status.className = "status error";
+          status.textContent = `❌ Upload failed: ${JSON.stringify(data)}`;
+        }
+      } catch (err) {
+        status.className = "status error";
+        status.textContent = `❌ Error: ${err.message}`;
+      }
+      btn.disabled = false;
+      btn.textContent = "Upload Monster Art";
+    }
+
+    async function batchUpload() {
+      const json = document.getElementById("batchJson").value;
+      const adminKey = document.getElementById("adminKey").value;
+      const status = document.getElementById("batchStatus");
+      try {
+        const images = JSON.parse(json);
+        const res = await fetch("/api/admin/upload-monster-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-admin-key": adminKey },
+          body: JSON.stringify({ images }),
+        });
+        const data = await res.json();
+        const success = data.results?.filter(r => r.status === "success").length || 0;
+        status.className = "status success";
+        status.textContent = `✅ ${success}/${images.length} images uploaded!`;
+      } catch (err) {
+        status.className = "status error";
+        status.textContent = `❌ ${err.message}`;
+      }
+    }
+  </script>
+</body>
+</html>

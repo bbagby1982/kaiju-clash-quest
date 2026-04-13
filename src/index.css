@@ -1,0 +1,232 @@
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*/* Kaiju Clash Quest Design System - Cinematic Monster Theme */
+
+@layer base {
+  :root {
+    /* Dark theme by default - cinematic monster game */
+    --background: 220 20% 4%;
+    --foreground: 180 100% 95%;
+
+    --card: 220 25% 8%;
+    --card-foreground: 180 100% 95%;
+
+    --popover: 220 25% 10%;
+    --popover-foreground: 180 100% 95%;
+
+    /* Atomic Green - Primary */
+    --primary: 120 100% 45%;
+    --primary-foreground: 220 20% 4%;
+
+    /* Deep Blue - Secondary */
+    --secondary: 210 100% 50%;
+    --secondary-foreground: 220 20% 4%;
+
+    /* Electric Yellow - Accent (Battle Ready) */
+    --accent: 50 100% 50%;
+    --accent-foreground: 220 20% 4%;
+
+    --muted: 220 20% 15%;
+    --muted-foreground: 220 15% 60%;
+
+    --destructive: 0 90% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 20% 20%;
+    --input: 220 20% 15%;
+    --ring: 120 100% 45%;
+
+    --radius: 0.75rem;
+
+    /* Custom game colors */
+    --atomic-green: 120 100% 45%;
+    --atomic-green-glow: 120 100% 60%;
+    --electric-blue: 210 100% 50%;
+    --electric-blue-glow: 210 100% 70%;
+    --lightning-yellow: 50 100% 50%;
+    --lightning-yellow-glow: 50 100% 70%;
+    --monster-red: 0 85% 50%;
+    --monster-orange: 25 100% 55%;
+    --deep-purple: 270 80% 50%;
+    
+    /* Gradients */
+    --gradient-atomic: linear-gradient(135deg, hsl(120 100% 45%), hsl(180 100% 40%));
+    --gradient-battle: linear-gradient(135deg, hsl(50 100% 50%), hsl(35 100% 50%));
+    --gradient-ocean: linear-gradient(180deg, hsl(210 100% 50%), hsl(220 80% 30%));
+    --gradient-volcano: linear-gradient(180deg, hsl(0 85% 50%), hsl(25 100% 40%));
+    --gradient-dark: linear-gradient(180deg, hsl(220 25% 12%), hsl(220 20% 4%));
+
+    /* Shadows */
+    --shadow-atomic: 0 0 30px hsl(120 100% 45% / 0.4);
+    --shadow-battle: 0 0 30px hsl(50 100% 50% / 0.5);
+    --shadow-blue: 0 0 30px hsl(210 100% 50% / 0.4);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-rajdhani;
+    background-image: 
+      radial-gradient(ellipse at 20% 20%, hsl(120 100% 45% / 0.05) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 80%, hsl(210 100% 50% / 0.05) 0%, transparent 50%);
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-orbitron font-bold tracking-wide;
+  }
+}
+
+@layer components {
+  .glow-atomic {
+    box-shadow: var(--shadow-atomic);
+  }
+
+  .glow-battle {
+    box-shadow: var(--shadow-battle);
+  }
+
+  .glow-blue {
+    box-shadow: var(--shadow-blue);
+  }
+
+  .text-glow-atomic {
+    text-shadow: 0 0 20px hsl(120 100% 45% / 0.8);
+  }
+
+  .text-glow-yellow {
+    text-shadow: 0 0 20px hsl(50 100% 50% / 0.8);
+  }
+
+  .gradient-atomic {
+    background: var(--gradient-atomic);
+  }
+
+  .gradient-battle {
+    background: var(--gradient-battle);
+  }
+
+  .monster-card {
+    @apply relative overflow-hidden rounded-xl border border-border bg-card;
+    background: linear-gradient(180deg, hsl(220 25% 12%), hsl(220 20% 6%));
+  }
+
+  .monster-card::before {
+    content: '';
+    @apply absolute inset-0 opacity-0 transition-opacity duration-300;
+    background: linear-gradient(135deg, hsl(120 100% 45% / 0.1), transparent);
+  }
+
+  .monster-card:hover::before {
+    @apply opacity-100;
+  }
+
+  .battle-ready-btn {
+    @apply relative overflow-hidden font-orbitron font-bold text-lg px-8 py-4 rounded-xl;
+    background: linear-gradient(135deg, hsl(50 100% 50%), hsl(40 100% 45%));
+    color: hsl(220 20% 4%);
+    box-shadow: 
+      0 0 30px hsl(50 100% 50% / 0.5),
+      inset 0 1px 0 hsl(50 100% 70% / 0.5);
+    transition: all 0.3s ease;
+  }
+
+  .battle-ready-btn:hover {
+    transform: scale(1.05);
+    box-shadow: 
+      0 0 50px hsl(50 100% 50% / 0.7),
+      inset 0 1px 0 hsl(50 100% 70% / 0.5);
+  }
+
+  .battle-ready-btn::before {
+    content: '';
+    @apply absolute inset-0;
+    background: linear-gradient(90deg, transparent, hsl(0 0% 100% / 0.3), transparent);
+    transform: translateX(-100%);
+    animation: shimmer 2s infinite;
+  }
+
+  .stat-bar {
+    @apply h-3 rounded-full overflow-hidden;
+    background: hsl(220 20% 15%);
+  }
+
+  .stat-bar-fill {
+    @apply h-full rounded-full transition-all duration-500;
+  }
+
+  .qte-zone {
+    @apply relative w-full h-4 rounded-full overflow-hidden;
+    background: hsl(220 20% 12%);
+  }
+
+  .qte-target {
+    @apply absolute h-full rounded;
+    background: hsl(120 100% 45% / 0.3);
+    border: 2px solid hsl(120 100% 45%);
+  }
+
+  .qte-indicator {
+    @apply absolute h-full w-1 rounded;
+    background: hsl(50 100% 50%);
+    box-shadow: 0 0 10px hsl(50 100% 50%);
+    transition: left 0.05s linear;
+  }
+}
+
+@layer utilities {
+  .animate-pulse-glow {
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+
+  .animate-shake {
+    animation: shake 0.5s ease-in-out;
+  }
+
+  .animate-slam {
+    animation: slam 0.3s ease-out;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    opacity: 1;
+    filter: brightness(1);
+  }
+  50% {
+    opacity: 0.8;
+    filter: brightness(1.2);
+  }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+  20%, 40%, 60%, 80% { transform: translateX(5px); }
+}
+
+@keyframes slam {
+  0% { transform: scale(1.3); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes lightning-flash {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 1; }
+}
