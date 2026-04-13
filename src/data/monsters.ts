@@ -3147,6 +3147,39 @@ export const MONSTERS: Monster[] = [
     strengths: ['Charging power', 'Strength', 'Intimidating'],
     weaknesses: ['Gets lost', 'Red angers it', 'Cannot turn quickly'],
   },
+  {
+    id: 'king-ghidorah',
+    name: 'King Ghidorah',
+    title: 'The Three-Headed Storm King',
+    era: 'Cosmic Terror',
+    description: 'A colossal three-headed dragon from deep space. Each head fires gravity beams and they argue constantly about which head is in charge.',
+    stats: {
+      speed: 75,
+      strength: 95,
+      defense: 80,
+      specialAttack: 100,
+    },
+    specialAbility: {
+      name: 'Gravity Beam Tri-Strike',
+      description: 'All three heads fire devastating gravity beams simultaneously, dealing massive damage.',
+      type: 'energy',
+    },
+    terrainBonus: ['storm', 'space', 'ruins'],
+    rarity: 'legendary',
+    imageColor: 'hsl(45 90% 35%)',
+    unlockRequirements: [
+      { type: 'battles_won', target: 20, description: 'Win 20 battles' },
+      { type: 'trait_wins', target: 5, trait: 'specialAttack', description: 'Win 5 Special Attack battles' },
+    ],
+    funFacts: [
+      'Has three brains and still makes bad decisions',
+      'Each head has a different favorite food',
+      'Left head is the smartest, right head disagrees',
+      'Can fly despite having no wings that make sense',
+    ],
+    strengths: ['Three heads triple the chomping', 'Gravity beams', 'Intimidates everyone'],
+    weaknesses: ['Heads disagree on strategy', 'Very hard to sneak around', 'Extremely loud'],
+  },
 ];
 
 export const getMonsterById = (id: string): Monster | undefined => {
@@ -3159,7 +3192,7 @@ const MONSTERS_WITH_IMAGES = new Set([
   'millennium-godzilla', 'monsterverse-godzilla', 'burning-godzilla',
   'kong-armed', 'sharkgera', 'crystal-serpent', 'storm-titan',
   // Cloud-uploaded via admin
-  'glacius', 'infernox', 'sockzilla', 'mechazord',
+  'glacius', 'infernox', 'sockzilla', 'mechazord', 'king-ghidorah',
 ]);
 
 /** Only monsters that have real artwork — use this for all player-facing lists */
