@@ -5,3 +5,7 @@
 
 [functions]
   node_bundler = "esbuild"
+
+[build.environment]
+  NETLIFY_SKIP_PLUGIN_NEON = "true"
+  NEON_DATABASE_URL = "skip"
