@@ -3158,6 +3158,8 @@ const MONSTERS_WITH_IMAGES = new Set([
   'showa-godzilla', 'king-kong', 'heisei-godzilla', 'evolved-godzilla',
   'millennium-godzilla', 'monsterverse-godzilla', 'burning-godzilla',
   'kong-armed', 'sharkgera', 'crystal-serpent', 'storm-titan',
+  // Cloud-uploaded via admin
+  'glacius', 'infernox', 'sockzilla', 'mechazord',
 ]);
 
 /** Only monsters that have real artwork — use this for all player-facing lists */
