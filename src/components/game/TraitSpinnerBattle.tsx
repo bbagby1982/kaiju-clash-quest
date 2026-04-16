@@ -12,6 +12,10 @@ import monsterverseGodzilla from '@/assets/monsters/monsterverse-godzilla.png';
 import burningGodzilla from '@/assets/monsters/burning-godzilla.png';
 import battleKong from '@/assets/monsters/battle-kong.png';
 import sharkgera from '@/assets/monsters/sharkgera.png';
+import infernox from '@/assets/monsters/infernox.png';
+import glacius from '@/assets/monsters/glacius.png';
+import voltara from '@/assets/monsters/voltara.png';
+import cyclonix from '@/assets/monsters/cyclonix.png';
 
 const monsterImages: Record<string, string> = {
   'showa-godzilla': showaGodzilla,
@@ -23,6 +27,10 @@ const monsterImages: Record<string, string> = {
   'burning-godzilla': burningGodzilla,
   'kong-armed': battleKong,
   'sharkgera': sharkgera,
+  'infernox': infernox,
+  'glacius': glacius,
+  'voltara': voltara,
+  'cyclonix': cyclonix,
 };
 
 import { Booster, GameMap } from '@/types/game';

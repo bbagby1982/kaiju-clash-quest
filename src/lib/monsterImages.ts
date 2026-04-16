@@ -12,6 +12,10 @@ import battleKong from '@/assets/monsters/battle-kong.png';
 import sharkgera from '@/assets/monsters/sharkgera.png';
 import crystalSerpent from '@/assets/monsters/crystal-serpent.png';
 import stormTitan from '@/assets/monsters/storm-titan.png';
+import infernox from '@/assets/monsters/infernox.png';
+import glacius from '@/assets/monsters/glacius.png';
+import voltara from '@/assets/monsters/voltara.png';
+import cyclonix from '@/assets/monsters/cyclonix.png';
 
 // Map all monster IDs to their image imports
 const monsterImages: Record<string, string> = {
@@ -26,6 +30,10 @@ const monsterImages: Record<string, string> = {
   'sharkgera': sharkgera,
   'crystal-serpent': crystalSerpent,
   'storm-titan': stormTitan,
+  'infernox': infernox,
+  'glacius': glacius,
+  'voltara': voltara,
+  'cyclonix': cyclonix,
 };
 
 // Category-based emoji fallbacks for monsters without images
