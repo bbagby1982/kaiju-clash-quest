@@ -83,7 +83,10 @@ export async function fetchRosterManifest(timeoutMs = 8000): Promise<RosterManif
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch('/api/roster', { signal: ctrl.signal, headers: { Accept: 'application/json' } });
+    // no-store: the admin page calls refresh() right after every upload/create/delete
+    // and must see the change immediately, not the browser's cached copy from the
+    // server's 60s Cache-Control (that header stays as-is for CDN/edge benefit).
+    const res = await fetch('/api/roster', { signal: ctrl.signal, cache: 'no-store', headers: { Accept: 'application/json' } });
     if (!res.ok) return null;
     const data = await res.json();
     if (!data || typeof data !== 'object') return null;

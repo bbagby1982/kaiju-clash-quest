@@ -46,12 +46,9 @@ export function SpectatorRaceTrack({ racers: initialRacers, predictedWinner, map
   const raceMapData = useMemo(() => getRaceMapData(map.id), [map.id]);
   const weatherModifier = useMemo(() => getWeatherSpeedModifier(weather), [weather]);
 
-  // Assign lanes based on number of racers
-  const getLane = (index: number, total: number) => {
-    if (total === 2) return index === 0 ? 0 : 2;
-    if (total === 3) return index;
-    return index < 2 ? (index === 0 ? 0 : 2) : (index === 2 ? 1 : 1.5);
-  };
+  // One lane per racer, top to bottom — RaceEnvironment draws exactly `racers.length`
+  // lane guides and RaceMonster centres itself in lane `index` of that many.
+  const getLane = (index: number, _total: number) => index;
 
   // Initialize race
   useEffect(() => {
@@ -196,7 +193,7 @@ export function SpectatorRaceTrack({ racers: initialRacers, predictedWinner, map
       }}
     >
       {/* Environment layers (includes the lane-marked track bed) */}
-      <RaceEnvironment map={map} scrollPosition={scrollPosition} />
+      <RaceEnvironment map={map} scrollPosition={scrollPosition} laneCount={racers.length} />
 
       {/* Weather overlay */}
       <RaceWeather weather={weather} />
@@ -269,10 +266,12 @@ export function SpectatorRaceTrack({ racers: initialRacers, predictedWinner, map
                   monster={racer.monster}
                   position={racer.position}
                   lane={racer.lane}
+                  laneCount={racers.length}
                   isPlayer={racer.monster.id === predictedWinner.id}
                   isBoosting={racer.isBoosting}
                   isHit={racer.isHit}
                   terrain={map.terrain}
+                  isWinner={finishOrder[0]?.id === racer.monster.id}
                 />
               ))}
 

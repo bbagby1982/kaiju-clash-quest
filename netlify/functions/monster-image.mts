@@ -9,7 +9,12 @@ import { getStore } from "@netlify/blobs";
  */
 export default async (req: Request, _context: Context) => {
   const url = new URL(req.url);
-  const monsterId = decodeURIComponent(url.pathname.replace("/api/monster-image/", "").replace(/\/$/, ""));
+  let monsterId: string;
+  try {
+    monsterId = decodeURIComponent(url.pathname.replace("/api/monster-image/", "").replace(/\/$/, ""));
+  } catch {
+    return new Response("Monster ID required", { status: 400 });
+  }
 
   if (!monsterId || !/^[a-z0-9][a-z0-9-]{0,60}$/.test(monsterId)) {
     return new Response("Monster ID required", { status: 400 });

@@ -5,6 +5,8 @@ interface RaceMonsterProps {
   monster: Monster;
   position: number;
   lane: number;
+  /** How many lanes the track has; the sprite is centred in lane `lane` of `laneCount`. */
+  laneCount?: number;
   isPlayer: boolean;
   isBoosting: boolean;
   isHit: boolean;
@@ -17,6 +19,7 @@ export function RaceMonster({
   monster,
   position,
   lane,
+  laneCount = 4,
   isPlayer,
   isBoosting,
   isHit,
@@ -31,8 +34,8 @@ export function RaceMonster({
       className="race-monster absolute transition-[left] duration-100 ease-linear"
       style={{
         left: `${position}%`,
-        top: `${lane * 25 + 15}%`,
-        transform: 'translateX(-50%)',
+        top: `${(lane + 0.5) * (100 / laneCount)}%`,
+        transform: 'translate(-50%, -50%)',
         zIndex: isPlayer ? 20 : 10,
       }}
     >

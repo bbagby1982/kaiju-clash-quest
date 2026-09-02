@@ -81,6 +81,11 @@ const TERRAIN_ICON: Record<GameMap['terrain'], string> = {
 
 const clampHP = (n: number) => Math.max(0, Math.min(MAX_HP, n));
 
+/** Waits on `p`, but never longer than `ms` — a stuck voice clip must never delay the round. */
+function withHardCap(p: Promise<void>, ms: number): Promise<void> {
+  return Promise.race([p, new Promise<void>((resolve) => { window.setTimeout(resolve, ms); })]);
+}
+
 /* ── Victory quotes — one line the winning fighter "speaks" at the finale.
    Player wins voice as 'godzilla', opponent wins voice as 'godzilla2' (src/lib/voice.ts). ── */
 const PLAYER_WIN_LINES = [
@@ -155,6 +160,10 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
   const narrationAbort = useRef<AbortController | null>(null);
   const narratorOff = useRef(false);
   const narratorFailures = useRef(0);
+  // A round's AI caption that arrived mid-round: applying it immediately would just
+  // get stamped over by the next beat's local caption, so it waits here until the
+  // round's beat sequence is done — see the play() done callback in handleChoice.
+  const pendingRoundAI = useRef<{ token: number; text: string } | null>(null);
 
   // Voice plumbing. One AbortController for the arena's whole lifetime (aborted on
   // unmount) and one "already spoken" token so an AI caption that arrives late never
@@ -164,10 +173,11 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
   const vsignal = useCallback((): AbortSignal | undefined => voiceAbort.current?.signal, []);
   const voiceSpokenForToken = useRef(-1);
   const captionRef = useRef('');
-  const narrateOnce = useCallback((token: number, text: string) => {
-    if (!text || voiceSpokenForToken.current === token) return;
+  /** Speaks `text` once per token; resolves when it's done (or immediately if skipped). */
+  const narrateOnce = useCallback((token: number, text: string): Promise<void> => {
+    if (!text || voiceSpokenForToken.current === token) return Promise.resolve();
     voiceSpokenForToken.current = token;
-    void speak(text, 'narrator', { signal: vsignal() });
+    return speak(text, 'narrator', { signal: vsignal() });
   }, [vsignal]);
 
   const reduced = useRef(
@@ -318,13 +328,24 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
         if (phaseRef.current === 'results') return;
         const text = typeof data?.narration === 'string' ? data.narration.trim() : '';
         if (text) {
-          showCaption(text, true);
-          // Finale narration doesn't get a narrator voice line — only the announcer
-          // stamp and the winner's own victory quote, wired in startFinale.
-          if (narrationPhase !== 'finale') narrateOnce(token, text);
+          if (narrationPhase === 'round') {
+            // Don't show it yet — the beat still playing would call showCaption(beat.text)
+            // right after this and stamp over it before anyone reads it. It's applied
+            // (and spoken) once the round's beat sequence finishes, in handleChoice.
+            pendingRoundAI.current = { token, text };
+          } else {
+            showCaption(text, true);
+            // Finale narration doesn't get a narrator voice line — only the announcer
+            // stamp and the winner's own victory quote, wired in startFinale.
+            if (narrationPhase !== 'finale') narrateOnce(token, text);
+          }
         }
       })
-      .catch(() => {
+      .catch((err: unknown) => {
+        // The arena's OWN aborts — a newer requestNarration superseding this one, or
+        // the 6s bail below — reject with AbortError. That's not the narrator failing
+        // and must never count toward narratorOff's 3-strikes limit.
+        if (ctrl.signal.aborted || (err instanceof Error && err.name === 'AbortError')) return;
         narratorFailures.current += 1;
         if (narratorFailures.current >= 3) narratorOff.current = true;
       })
@@ -547,14 +568,29 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
     history.current = history.current.concat(result.beats.map((b) => b.text));
 
     play(steps, () => {
-      // Playback for this round is over: if the AI narration never arrived in time,
-      // read out the local caption that's on screen right now instead. narrateOnce
-      // is a no-op if the AI line already spoke for this round's token.
-      narrateOnce(roundVoiceToken, captionRef.current);
-      if (result.over) startFinale(result);
-      else beginRound(result.round + 1);
+      // Playback for this round is over. If AI narration for THIS round arrived while
+      // a beat was still playing, it was buffered instead of shown immediately (that
+      // would have been stamped over by the next beat's local caption) — apply it now
+      // as the round's final caption. Otherwise fall back to whatever local caption is
+      // on screen. Either way, the spoken line matches what's now on screen.
+      const buffered = pendingRoundAI.current;
+      const useBuffered = !!buffered && buffered.token === roundVoiceToken;
+      const finalCaption = useBuffered ? buffered!.text : captionRef.current;
+      if (useBuffered) {
+        showCaption(finalCaption, true);
+        pendingRoundAI.current = null;
+      }
+      void (async () => {
+        // Sequence this caption's speech before the next round's "ROUND n" announcer
+        // stamp — both go through the same interrupting speech element (see
+        // voice.ts's speak()), so firing them together lets whichever lands second
+        // cut the other off mid-word. Capped so a stuck clip never delays the round.
+        await withHardCap(narrateOnce(roundVoiceToken, finalCaption), 4000);
+        if (result.over) startFinale(result);
+        else beginRound(result.round + 1);
+      })();
     });
-  }, [beginRound, booster, buildBeatSteps, commitHP, map, narrateOnce, opponentMonster, play, playerMonster, requestNarration, setPhaseTracked, startFinale, trait]);
+  }, [beginRound, booster, buildBeatSteps, commitHP, map, narrateOnce, opponentMonster, play, playerMonster, requestNarration, setPhaseTracked, showCaption, startFinale, trait]);
 
   const startIntro = useCallback(() => {
     setPhaseTracked('intro');
@@ -577,9 +613,13 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
         },
       },
     ], () => {
-      // Same "AI if it arrived in time, else the local one — never both" rule as a round.
-      narrateOnce(introVoiceToken, captionRef.current);
-      beginRound(1);
+      // Same "AI if it arrived in time, else the local one — never both" rule as a
+      // round, and the same sequencing: let the intro's line finish (or hit the 4s
+      // cap) before ROUND 1's announcer stamp tries to speak over it.
+      void (async () => {
+        await withHardCap(narrateOnce(introVoiceToken, captionRef.current), 4000);
+        beginRound(1);
+      })();
     });
   }, [beginRound, map, narrateOnce, opponentMonster, play, playerMonster, pushFX, requestNarration, setPhaseTracked, showCaption, vsignal]);
 

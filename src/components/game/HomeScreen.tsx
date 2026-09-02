@@ -48,20 +48,24 @@ function useMotes(count: number) {
 export function HomeScreen({ progress, onNavigate, challengeSlot, cloudSlot }: HomeScreenProps) {
   const roster = useRoster();
   const motes = useMotes(16);
-  const [reroll, setReroll] = useState(0);
+  // A seed picked once per mount, plus a reroll count bumped by the "Another monster"
+  // button. No Math.random() inside the memo below — that would re-randomise the pick
+  // whenever roster.playable or progress.unlockedMonsters changes identity (which boot
+  // does 2-3 times), swapping the hero sprite under the kid's finger.
+  const [seed] = useState(() => Math.floor(Math.random() * 1e9));
+  const [rerollCount, setRerollCount] = useState(0);
 
   // The star of the title screen: a random monster Alfred has actually unlocked.
   const featured: Monster | null = useMemo(() => {
     const owned = roster.unlocked(progress.unlockedMonsters);
     const pool = owned.length > 0 ? owned : roster.playable;
     if (pool.length === 0) return null;
-    // `reroll` re-picks on tap; the modulo keeps the pick stable between renders.
-    const idx = (Math.floor(Math.random() * pool.length) + reroll) % pool.length;
+    const idx = (seed + rerollCount) % pool.length;
     return pool[idx];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roster.playable, progress.unlockedMonsters, reroll]);
+  }, [roster.playable, progress.unlockedMonsters, seed, rerollCount]);
 
-  const rerollFeatured = useCallback(() => setReroll((n) => n + 1), []);
+  const rerollFeatured = useCallback(() => setRerollCount((n) => n + 1), []);
 
   const funFact = featured?.funFacts?.[0];
   const raceRecord = `${progress.racesWon}-${progress.racesLost}`;

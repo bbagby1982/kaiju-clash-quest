@@ -1,39 +1,39 @@
-# HANDOFF — paused 2026-09-02 (owner asked to stop until new credits)
+# HANDOFF — Kaiju Clash Quest redesign (branch `claude/game-animation-monster-redesign-6rdkcp`)
 
-Branch `claude/game-animation-monster-redesign-6rdkcp`. Read this first when resuming.
+Read this first when picking the game up. Session of 2026-09-02; everything below is
+committed and pushed. The branch is NOT merged to `main` — merging is what deploys it to
+https://godzzillagame.netlify.app/ (the link in Family-HQ's Godzilla tab).
 
-## Done, committed, tested
-- Runtime roster (`src/lib/roster.tsx`), local battle engine (`src/lib/battleEngine.ts`),
-  `MonsterSprite` + CSS animation library (`src/index.css`), rewritten Netlify functions
-  (roster, image serving, upload by file/URL, custom monsters, narrator on the Anthropic SDK,
-  ElevenLabs voice + roars). `npm test` = 4,012 engine + 44 function checks.
-- Monster Studio at `/admin` (art upload/cut-out/re-optimize, custom monster editor), README.
-- Race mode with sprites/camera/podium; cloud-save auto-restore; dead components removed.
-- Netlify: the team-level Neon extension that broke every build since April is UNINSTALLED.
-  `ADMIN_KEY` is set on the `godzzillagame` site (owner has the value in chat).
-  `ELEVENLABS_KEY` is NOT set there yet — it is a masked secret on bb-family-hq, so the
-  owner must paste it into the game site herself. Voice ids pinned in `voice.mts`:
-  godzilla `fJmSoZVxiWuuypwIZMZa`, godzilla2 `Ducd71NdsHmshEfzo7mz`.
-- Canva pipeline proven: Terramoth art generated, exported, uploaded to the live blob store.
+## State of the branch
+- `npm run typecheck` clean · `npm run lint` 0 errors · `npm test` 4,012 engine + 45 function
+  checks · `npm run build` ok · `npm run test:e2e` drives a full battle and a race headless at
+  phone / iPad / desktop widths with fake `/api/*` routes (screenshots in `tests/e2e/shots/`).
+- Independent code review (10 findings) applied; scratch files removed.
 
-## In progress — the WIP commit after this note DOES NOT COMPILE
-Two agents were stopped mid-edit; their partial files are committed so they are not lost:
-- Arena rewrite: `src/components/game/BattleSimulation.tsx`, `src/components/game/arena/*`,
-  `src/styles/arena.css` — brief: VS intro, beats-driven playback from `resolveRound`,
-  backdrop per terrain, FX, HP bars, results overlay; `/api/battle` is narration-only.
-- Home/roster screens: `src/pages/Index.tsx`, `HomeScreen.tsx`, `GameLayout.tsx`,
-  `MonsterCard/Profile`, `EncyclopediaEntry`, `BattleSetup/Preview/Focus/Booster`,
-  `src/styles/home.css` — brief: title screen with featured sprite, 5 tabs, art-forward cards.
-Resume by running `npx tsc -p tsconfig.app.json --noEmit` and finishing whatever it flags.
+## What changed (one line each — details in git log)
+- Roster is runtime (`src/lib/roster.tsx`): static monsters + Canva art in Netlify Blobs +
+  custom monsters, via `/api/roster`; cloud art overrides bundled placeholders.
+- Battle engine is local (`src/lib/battleEngine.ts`); `/api/battle` only narrates.
+- Arena rebuilt: backdrop per terrain, sprites with CSS animation states, FX, HP bars,
+  VS intro, round stamps, results overlay; voices wired (narrator / announcer / two
+  Godzilla voices / roars) through `src/lib/voice.ts` → `/api/voice` (ElevenLabs, cached).
+- Home/title screen, roster cards, profile, encyclopedia, setup screens redesigned.
+- Race mode uses sprites, camera, lanes, photo finish, podium; cloud save auto-restores.
+- `/admin` Monster Studio: art upload (file or Canva link, resize, magic cut-out,
+  re-optimize), custom monster editor, voice test panel. Writes need `ADMIN_KEY`.
+- Netlify: Neon extension uninstalled from the team (it broke every build since April).
+  `ADMIN_KEY` set on the site. `ELEVENLABS_KEY` still to be pasted by the owner.
 
-## Not started
-- Wire `src/lib/voice.ts` into the arena (captions → narrator, FIGHT!/K.O.! → announcer,
-  specials → `roar()`, victory quote → godzilla/godzilla2, 🔊 mute in the HUD) and a voice
-  test panel in `/admin`.
-- Canva batch: 82 monsters still need art. Slices and a per-monster procedure are in the
-  session scratchpad only (`canva/slice-{1,2,3}.json`) — regenerate from `src/data/monsters.ts`
-  (every id not in the bundled set + not in `/api/roster` art). Owner direction: every monster
-  must look different; silly ones genuinely silly ("wild purple hair").
-- `tests/e2e/smoke.mjs` (Playwright, fake `/api/*`) is written but not yet run against the
-  finished screens; expect selector tweaks.
-- Merge to `main` to deploy; then `/admin` → Re-optimize the 3–6 MB legacy PNGs.
+## Art
+83 of 84 non-bundled monsters have Canva-generated art in the blob store (see
+`/api/roster`). Missing after two Canva quota walls: `phoenix-titan`, `chimera-beast`,
+`minotaur-prime` — a retry is scheduled; otherwise generate them in `/admin` or Canva.
+Lesson: Canva's generator sometimes returns a TEXT POSTER TEMPLATE or adds
+watermarks — every image must be looked at before upload (about 1 in 5 first drafts
+were rejected). Legacy PNGs (showa, infernox, glacius, sockzilla, mechazord,
+king-ghidorah) are 3–6 MB: press "Re-optimize" in `/admin` after deploy.
+
+## Not verified on real hardware
+iOS audio unlock and actual ElevenLabs playback (no key in the sandbox), the Canva-link
+CORS path and WebP/PNG fallback on older Safari in `/admin`, and the feel of the
+animations on an actual iPad. Everything else was exercised headless.

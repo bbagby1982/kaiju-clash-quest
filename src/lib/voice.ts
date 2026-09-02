@@ -36,7 +36,7 @@ export function isVoiceMuted(): boolean { return muted; }
 export function setVoiceMuted(next: boolean): void {
   muted = next;
   try { localStorage.setItem(MUTE_KEY, next ? '1' : '0'); } catch { /* ignore */ }
-  if (next) stopSpeaking();
+  if (next) stopAllAudio();
   notify();
 }
 export function isVoiceAvailable(): boolean | null { return available; }
@@ -110,6 +110,9 @@ function playOn(el: HTMLAudioElement | null, url: string, signal?: AbortSignal):
     el.addEventListener('ended', finish);
     el.addEventListener('error', finish);
     if (signal) signal.addEventListener('abort', () => { try { el.pause(); } catch { /* ignore */ } finish(); }, { once: true });
+    // Re-check right before play(): the clip's fetch may have been in flight when
+    // mute got tapped, so `muted` at call time isn't good enough.
+    if (muted) return finish();
     try {
       el.src = url;
       const p = el.play();
@@ -120,6 +123,12 @@ function playOn(el: HTMLAudioElement | null, url: string, signal?: AbortSignal):
 
 export function stopSpeaking(): void {
   try { if (speechEl) { speechEl.pause(); speechEl.currentTime = 0; } } catch { /* ignore */ }
+}
+
+/** Mute-tap handler: stop BOTH the speech line and any roar in progress. */
+function stopAllAudio(): void {
+  stopSpeaking();
+  try { if (roarEl) { roarEl.pause(); roarEl.currentTime = 0; } } catch { /* ignore */ }
 }
 
 /**

@@ -64,6 +64,8 @@ fake.__reset(); env.clear();
   ok(missing.status === 404, 'unknown id → 404');
   const evil = await fn['monster-image'](new Request('https://game.test/api/monster-image/..%2Fx'), {});
   ok(evil.status === 400, 'path traversal id → 400');
+  const malformed = await fn['monster-image'](new Request('https://game.test/api/monster-image/%E0%A4%A'), {});
+  ok(malformed.status === 400, 'malformed percent-encoding → 400, not a 500 from decodeURIComponent throwing');
 
   const roster = await json(await call(fn.roster, 'GET', '/api/roster'));
   ok(roster.status === 200 && typeof roster.body.art.sockzilla === 'string' && roster.body.custom.length === 0, 'roster lists uploaded art with a version token');

@@ -66,13 +66,19 @@ export function ArtEditor({ monster, adminKey, hasArt, currentImageUrl, showFaci
     }
   };
 
-  // Re-process automatically when the cut-out toggle or tolerance changes (debounced while dragging).
+  // Re-process automatically when the cut-out toggle or tolerance changes (debounced
+  // while dragging). `sourceImage` is deliberately NOT a dep: handleFiles and
+  // handleLoadCanvaLink already run the pipeline once explicitly when a new image
+  // loads, and putting sourceImage here too meant every load was processed twice
+  // (the explicit call, then this effect firing ~150ms later on the same image).
+  // The effect still reads the latest sourceImage via closure when cutout/tolerance
+  // change, it just doesn't re-fire merely because a new image was set.
   useEffect(() => {
     if (!sourceImage) return;
     const t = setTimeout(() => { runPipeline(sourceImage); }, 150);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cutout, tolerance, sourceImage]);
+  }, [cutout, tolerance]);
 
   const reset = () => {
     setSourceImage(null);
