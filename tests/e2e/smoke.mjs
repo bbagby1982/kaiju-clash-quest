@@ -106,7 +106,7 @@ for (const [vpName, vp] of Object.entries(VIEWPORTS)) {
     await tapText(page, /confirm|next|continue|battle/i);
     await page.waitForTimeout(400);
     // booster: continue without or with one
-    await tapText(page, /continue|no booster|skip|confirm|start/i);
+    await tapText(page, /fight without booster|fight with|continue/i);
     await page.waitForTimeout(400);
     await snap(page, `${vpName}-06-focus`);
     await page.getByText(/strength battle/i).first().click();
