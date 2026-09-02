@@ -6,6 +6,14 @@
 [functions]
   node_bundler = "esbuild"
 
+# Preserve the legacy URL without leaving an admin.html file for Netlify's
+# Pretty URLs feature to resolve at /admin ahead of the SPA fallback.
+[[redirects]]
+  from = "/admin.html"
+  to = "/admin"
+  status = 301
+  force = true
+
 # SPA fallback: React Router owns every non-API, non-file path.
 [[redirects]]
   from = "/*"
@@ -14,7 +22,7 @@
   force = false
 
 [[headers]]
-  for = "/admin.html"
+  for = "/admin"
   [headers.values]
     X-Robots-Tag = "noindex"
     Cache-Control = "no-cache"
