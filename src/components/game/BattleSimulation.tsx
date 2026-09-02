@@ -28,6 +28,7 @@ import { MonsterSprite, SpriteState } from './MonsterSprite';
 import { ArenaBackdrop } from './arena/ArenaBackdrop';
 import { BattleFXLayer, FXItem, FXSpec, fxColor, fxShapeForAbility } from './arena/BattleFX';
 import { HPBar } from './arena/HPBar';
+import { preloadRoar, roar, speak, useVoice } from '@/lib/voice';
 import {
   Beat,
   CHOICES,
@@ -80,6 +81,30 @@ const TERRAIN_ICON: Record<GameMap['terrain'], string> = {
 
 const clampHP = (n: number) => Math.max(0, Math.min(MAX_HP, n));
 
+/* ── Victory quotes — one line the winning fighter "speaks" at the finale.
+   Player wins voice as 'godzilla', opponent wins voice as 'godzilla2' (src/lib/voice.ts). ── */
+const PLAYER_WIN_LINES = [
+  'The King has spoken!',
+  'Bow before the true king of the monsters!',
+  'Victory tastes like atomic fire!',
+  'No titan can stand against me!',
+  'This city — and this crown — are mine!',
+  'You call that a fight? That was a warm-up!',
+  'Legends are made on days like this!',
+  'Let every kaiju hear my roar tonight!',
+];
+const OPPONENT_WIN_LINES = [
+  'Every battle makes me stronger!',
+  'You never stood a chance against me!',
+  'The throne is mine now!',
+  'Is that really your best, challenger?',
+  'Rest up — you will need it next time!',
+  'This ground is mine to claim!',
+  'Another titan falls before me!',
+  "That's how a real champion fights!",
+];
+const pickLine = (lines: string[]): string => lines[Math.floor(Math.random() * lines.length)];
+
 /* ── Local captions (used immediately, and kept when the narrator is offline) ── */
 
 function localIntro(p: Monster, o: Monster, map: GameMap) {
@@ -131,6 +156,20 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
   const narratorOff = useRef(false);
   const narratorFailures = useRef(0);
 
+  // Voice plumbing. One AbortController for the arena's whole lifetime (aborted on
+  // unmount) and one "already spoken" token so an AI caption that arrives late never
+  // gets read out twice (once as the local fallback, once as the AI line).
+  const voice = useVoice();
+  const voiceAbort = useRef<AbortController | null>(null);
+  const vsignal = useCallback((): AbortSignal | undefined => voiceAbort.current?.signal, []);
+  const voiceSpokenForToken = useRef(-1);
+  const captionRef = useRef('');
+  const narrateOnce = useCallback((token: number, text: string) => {
+    if (!text || voiceSpokenForToken.current === token) return;
+    voiceSpokenForToken.current = token;
+    void speak(text, 'narrator', { signal: vsignal() });
+  }, [vsignal]);
+
   const reduced = useRef(
     typeof window !== 'undefined' && typeof window.matchMedia === 'function'
       ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -176,6 +215,7 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
   }, [later]);
 
   const showCaption = useCallback((text: string, fromAI = false) => {
+    captionRef.current = text;
     setCaption(text);
     setCaptionFromAI(fromAI);
   }, []);
@@ -229,9 +269,9 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
   const requestNarration = useCallback((
     narrationPhase: 'intro' | 'round' | 'finale',
     payload: { round?: number; beats?: Beat[]; playerHP?: number; opponentHP?: number; winner?: RoundResult['winner'] } = {},
-  ) => {
-    if (narratorOff.current) return;
+  ): number => {
     const token = ++narrationToken.current;
+    if (narratorOff.current) return token;
     narrationAbort.current?.abort();
     const ctrl = new AbortController();
     narrationAbort.current = ctrl;
@@ -277,17 +317,23 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
         if (token !== narrationToken.current) return;
         if (phaseRef.current === 'results') return;
         const text = typeof data?.narration === 'string' ? data.narration.trim() : '';
-        if (text) showCaption(text, true);
+        if (text) {
+          showCaption(text, true);
+          // Finale narration doesn't get a narrator voice line — only the announcer
+          // stamp and the winner's own victory quote, wired in startFinale.
+          if (narrationPhase !== 'finale') narrateOnce(token, text);
+        }
       })
       .catch(() => {
         narratorFailures.current += 1;
         if (narratorFailures.current >= 3) narratorOff.current = true;
       })
       .finally(() => clearTimeout(bail));
-  }, [playerMonster, opponentMonster, map, battleFocus, booster, showCaption]);
+    return token;
+  }, [playerMonster, opponentMonster, map, battleFocus, booster, showCaption, narrateOnce]);
 
   /* ── beat → animation steps ─────────────────────────────────────────── */
-  const buildBeatSteps = useCallback((beat: Beat, after: { player: number; opponent: number }): Step[] => {
+  const buildBeatSteps = useCallback((beat: Beat, after: { player: number; opponent: number }, previousBeat: Beat | null): Step[] => {
     const actorMonster = beat.actor === 'player' ? playerMonster : opponentMonster;
     const setActor = beat.actor === 'player' ? setPlayerState : setOpponentState;
     const setTarget = beat.target === 'player' ? setPlayerState : setOpponentState;
@@ -329,6 +375,10 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
     const impactColor = beat.crit ? '#ffd600' : beat.terrainBoost ? map.accentColor : '#ffb300';
 
     // ── wind-up (specials charge first, so the kid sees the ability coming)
+    // If the target just braced in the beat right before this one (the round's other
+    // fighter defended, then immediately swings back), keep its guard up through the
+    // attacker's wind-up instead of snapping back to idle first.
+    const targetHeldGuard = previousBeat?.action === 'defend' && previousBeat.actor === beat.target;
     steps.push({
       ms: isSpecial ? 520 : 240,
       essential: true,
@@ -336,17 +386,20 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
         setFx([]);
         showCaption(beat.text);
         setActor(isSpecial ? 'charge' : 'attack');
-        setTarget(beat.target === 'player' ? (playerState === 'defend' ? 'defend' : 'idle') : 'idle');
+        setTarget(targetHeldGuard ? 'defend' : 'idle');
       },
     });
 
     // ── release: the ability actually leaves the attacker
     if (isSpecial) {
-      const releaseMs = shape === 'projectile' ? 520 : shape === 'shockwave' ? 280 : 220;
+      // Matches each shape's own CSS travel time (fx-projectile/-beam/-impact in index.css)
+      // so the contact FX lands right as the effect visually reaches the target.
+      const releaseMs = shape === 'projectile' ? 600 : shape === 'shockwave' ? 280 : 220;
       steps.push({
         ms: releaseMs,
         run: () => {
           setActor('special');
+          void roar(actorMonster, { signal: vsignal() });
           if (shape === 'beam') pushFX({ kind: 'beam', from: beat.actor, color: beamColor }, { kind: 'flash', color: `${beamColor}44` });
           else if (shape === 'projectile') pushFX({ kind: 'projectile', from: beat.actor, color: beamColor });
           else if (shape === 'shockwave') pushFX({ kind: 'shockwave', at: beat.actor, color: beamColor });
@@ -384,7 +437,7 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
     steps.push({ ms: isSpecial ? 400 : 420, essential: true, run: () => { idleBoth(); commit(); } });
     steps.push({ ms: isSpecial ? 200 : 280, run: () => undefined });
     return steps;
-  }, [playerMonster, opponentMonster, map, playerState, commitHP, pushFX, showCaption, triggerShake]);
+  }, [playerMonster, opponentMonster, map, commitHP, pushFX, showCaption, triggerShake, vsignal]);
 
   /* ── phases ─────────────────────────────────────────────────────────── */
   const startFinale = useCallback((result: RoundResult) => {
@@ -417,6 +470,14 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
         run: () => {
           pushFX({ kind: 'stamp', text: stampText, color: stampColor }, { kind: 'flash', color: '#ffffff44' });
           triggerShake(true);
+          // The announcer calls it, THEN the winner gets to talk — both go through the
+          // one shared speech element (speak() interrupts by default), so they're
+          // chained instead of fired together or they'd cut each other off.
+          void (async () => {
+            await speak(stampText, 'announcer', { signal: vsignal() });
+            if (result.winner === 'player') await speak(pickLine(PLAYER_WIN_LINES), 'godzilla', { signal: vsignal() });
+            else if (result.winner === 'opponent') await speak(pickLine(OPPONENT_WIN_LINES), 'godzilla2', { signal: vsignal() });
+          })();
         },
       },
       { ms: 1300, run: () => undefined },
@@ -424,16 +485,22 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
       setWinner(result.winner ?? 'tie');
       setPhaseTracked('results');
     });
-  }, [map, opponentMonster, play, playerMonster, pushFX, requestNarration, setPhaseTracked, showCaption, triggerShake]);
+  }, [map, opponentMonster, play, playerMonster, pushFX, requestNarration, setPhaseTracked, showCaption, triggerShake, vsignal]);
 
   const beginRound = useCallback((n: number) => {
     roundRef.current = n;
     setRound(n);
     setPhaseTracked('playing');
     play([
-      { ms: 850, run: () => pushFX({ kind: 'stamp', text: `ROUND ${n}`, color: '#7fff00' }) },
+      {
+        ms: 850,
+        run: () => {
+          pushFX({ kind: 'stamp', text: `ROUND ${n}`, color: '#7fff00' });
+          void speak(`ROUND ${n}`, 'announcer', { signal: vsignal() });
+        },
+      },
     ], () => setPhaseTracked('menu'));
-  }, [play, pushFX, setPhaseTracked]);
+  }, [play, pushFX, setPhaseTracked, vsignal]);
 
   const handleChoice = useCallback((choice: Choice) => {
     if (phaseRef.current !== 'menu') return;
@@ -452,7 +519,7 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
       opponentHP: hp.current.opponent,
     });
 
-    requestNarration('round', {
+    const roundVoiceToken = requestNarration('round', {
       round: result.round,
       beats: result.beats,
       playerHP: result.playerHP,
@@ -463,10 +530,12 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
     let p = hp.current.player;
     let o = hp.current.opponent;
     const steps: Step[] = [];
+    let previousBeat: Beat | null = null;
     for (const beat of result.beats) {
       if (beat.actor === 'player') { o = clampHP(o - beat.damage); p = clampHP(p - beat.counter); }
       else { p = clampHP(p - beat.damage); o = clampHP(o - beat.counter); }
-      steps.push(...buildBeatSteps(beat, { player: p, opponent: o }));
+      steps.push(...buildBeatSteps(beat, { player: p, opponent: o }, previousBeat));
+      previousBeat = beat;
     }
     // Belt and braces: whatever the playback did, the engine's numbers are the truth.
     steps.push({
@@ -478,21 +547,41 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
     history.current = history.current.concat(result.beats.map((b) => b.text));
 
     play(steps, () => {
+      // Playback for this round is over: if the AI narration never arrived in time,
+      // read out the local caption that's on screen right now instead. narrateOnce
+      // is a no-op if the AI line already spoke for this round's token.
+      narrateOnce(roundVoiceToken, captionRef.current);
       if (result.over) startFinale(result);
       else beginRound(result.round + 1);
     });
-  }, [beginRound, booster, buildBeatSteps, commitHP, map, opponentMonster, play, playerMonster, requestNarration, setPhaseTracked, startFinale, trait]);
+  }, [beginRound, booster, buildBeatSteps, commitHP, map, narrateOnce, opponentMonster, play, playerMonster, requestNarration, setPhaseTracked, startFinale, trait]);
 
   const startIntro = useCallback(() => {
     setPhaseTracked('intro');
     showCaption(localIntro(playerMonster, opponentMonster, map));
-    requestNarration('intro');
+    // Both roars are pre-fetched now so the special-attack roar() later in the fight
+    // plays instantly instead of waiting on the network the first time it's needed.
+    preloadRoar(playerMonster);
+    preloadRoar(opponentMonster);
+    const introVoiceToken = requestNarration('intro');
     play([
       { ms: 750, run: () => { setPlayerState('enter'); setOpponentState('enter'); setShowVs(true); } },
       { ms: 1300, essential: true, run: () => { setPlayerState('idle'); setOpponentState('idle'); } },
-      { ms: 800, essential: true, run: () => { setShowVs(false); pushFX({ kind: 'stamp', text: 'FIGHT!', color: '#ffd600' }); } },
-    ], () => beginRound(1));
-  }, [beginRound, map, opponentMonster, play, playerMonster, pushFX, requestNarration, setPhaseTracked, showCaption]);
+      {
+        ms: 800,
+        essential: true,
+        run: () => {
+          setShowVs(false);
+          pushFX({ kind: 'stamp', text: 'FIGHT!', color: '#ffd600' });
+          void speak('FIGHT!', 'announcer', { signal: vsignal() });
+        },
+      },
+    ], () => {
+      // Same "AI if it arrived in time, else the local one — never both" rule as a round.
+      narrateOnce(introVoiceToken, captionRef.current);
+      beginRound(1);
+    });
+  }, [beginRound, map, narrateOnce, opponentMonster, play, playerMonster, pushFX, requestNarration, setPhaseTracked, showCaption, vsignal]);
 
   /* ── boot: give the art a moment to load, then start no matter what ──── */
   const kickoff = useCallback(() => {
@@ -503,6 +592,7 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
 
   useEffect(() => {
     mounted.current = true;
+    voiceAbort.current = new AbortController();
     const bootTimer = window.setTimeout(() => kickoff(), 1500);
     return () => {
       mounted.current = false;
@@ -511,6 +601,7 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
       timers.current = [];
       seq.current = null;
       narrationAbort.current?.abort();
+      voiceAbort.current?.abort();
     };
     // Mount-only: the fight owns its own lifecycle from here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -557,7 +648,8 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
         </div>
       </div>
 
-      {/* ── HUD ── */}
+      {/* ── HUD ── (hidden once the results sheet is up — see the arena-results comment below) */}
+      {phase !== 'results' && (
       <div className="arena-hud">
         <div className="mx-auto w-full max-w-3xl flex items-start gap-2">
           <HPBar monster={playerMonster} hp={playerHP} side="player" terrainBonus={playerOwnsMap} className="flex-1 min-w-0" />
@@ -567,6 +659,17 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
               ROUND {round}/{MAX_ROUNDS}
             </span>
             <span className="arena-chip" style={{ color: traitInfo.color }}>{traitInfo.label}</span>
+            <button
+              type="button"
+              className="arena-voice-toggle"
+              onClick={voice.toggle}
+              disabled={voice.available === false}
+              aria-pressed={!voice.muted}
+              aria-label={voice.muted ? 'Unmute voices' : 'Mute voices'}
+              title={voice.available === false ? 'Voices not set up' : voice.muted ? 'Unmute voices' : 'Mute voices'}
+            >
+              {voice.muted || voice.available === false ? '🔇' : '🔊'}
+            </button>
           </div>
 
           <HPBar monster={opponentMonster} hp={opponentHP} side="opponent" terrainBonus={opponentOwnsMap} className="flex-1 min-w-0" />
@@ -583,6 +686,7 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
           )}
         </div>
       </div>
+      )}
 
       {/* ── VS splash ── */}
       {showVs && (
@@ -599,7 +703,9 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
         </div>
       )}
 
-      {/* ── caption + command menu ── */}
+      {/* ── caption + command menu ── (hidden once the results sheet is up: the finale
+           stamp has already finished and there is nothing left to skip or choose) */}
+      {phase !== 'results' && (
       <div className="arena-bottom">
         <div className="mx-auto w-full max-w-3xl">
           <button
@@ -642,8 +748,10 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
           )}
         </div>
       </div>
+      )}
 
-      {/* ── results ── */}
+      {/* ── results ── an opaque sheet: the HUD/caption/menu above are unmounted (not just
+          covered) the moment this phase starts, so nothing from the fight can bleed through. */}
       {phase === 'results' && winner && (
         <div className="arena-results">
           <div className="arena-results-sheet">

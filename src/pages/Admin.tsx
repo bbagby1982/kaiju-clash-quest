@@ -6,6 +6,7 @@ import { useAdminKey } from '@/components/admin/useAdminKey';
 import { AdminKeyBar } from '@/components/admin/AdminKeyBar';
 import { MonsterGallery } from '@/components/admin/MonsterGallery';
 import { MonsterEditor } from '@/components/admin/MonsterEditor';
+import { VoicePanel } from '@/components/admin/VoicePanel';
 
 /** null = create-new. A string id = editing that monster. Nothing selected = the gallery. */
 type Target = { id: string | null } | null;
@@ -44,6 +45,8 @@ export default function Admin() {
             onCreateNew={() => setTarget({ id: null })}
           />
         )}
+
+        <VoicePanel />
       </main>
     </div>
   );

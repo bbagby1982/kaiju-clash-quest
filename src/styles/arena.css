@@ -51,8 +51,12 @@
 
 .arena-ground {
   position: absolute; left: 0; right: 0; top: var(--arena-ground); bottom: 0;
+  /* The horizon edge (top, 0%) reads as the darker/hazier "far" colour, the
+     foreground behind the caption bar (bottom, 100%) as the lighter "near" one —
+     otherwise the ground fades to near-black well before it reaches the bottom of
+     a tall phone screen and the lower third reads as dead space. */
   background:
-    linear-gradient(to bottom, var(--arena-ground-near, #1b1f27) 0%, var(--arena-ground-far, #0a0c11) 100%);
+    linear-gradient(to bottom, var(--arena-ground-far, #0a0c11) 0%, var(--arena-ground-near, #1b1f27) 100%);
 }
 .arena-ground::before {
   content: ''; position: absolute; left: 0; right: 0; top: 0; height: 3px;
@@ -61,10 +65,10 @@
 }
 /* Receding perspective lines so the ground reads as a plane, not a stripe. */
 .arena-ground::after {
-  content: ''; position: absolute; inset: 0; opacity: 0.35;
-  background: repeating-linear-gradient(to bottom, rgb(255 255 255 / 0.05) 0 1px, transparent 1px 14px);
-  mask-image: linear-gradient(to bottom, transparent, #000 40%);
-  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 40%);
+  content: ''; position: absolute; inset: 0; opacity: 0.5;
+  background: repeating-linear-gradient(to bottom, rgb(255 255 255 / 0.09) 0 1px, transparent 1px 14px);
+  mask-image: linear-gradient(to bottom, transparent, #000 15%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 15%);
 }
 
 .arena-vignette {
@@ -191,6 +195,19 @@
   white-space: nowrap;
 }
 
+/* Mute/unmute — a real 44px tap target even though the visible icon is smaller. */
+.arena-voice-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; margin: -2px 0;
+  border-radius: 999px; border: 1px solid rgb(255 255 255 / 0.25);
+  background: rgb(0 0 0 / 0.55); color: inherit; font-size: 17px; line-height: 1;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+}
+.arena-voice-toggle:disabled { opacity: 0.35; }
+@media (hover: hover) {
+  .arena-voice-toggle:not(:disabled):hover { background: rgb(255 255 255 / 0.12); }
+}
+
 /* HP bars */
 .arena-hp { min-width: 0; }
 .arena-hp-name {
@@ -303,7 +320,12 @@
 /* ── Results panel ────────────────────────────────────────────────────── */
 .arena-results {
   position: absolute; inset: 0; z-index: 50; display: flex; align-items: flex-end; justify-content: center;
-  background: linear-gradient(to top, rgb(2 3 6 / 0.96) 45%, rgb(2 3 6 / 0.55));
+  /* Solid, not a fade to translucent at the top — the HUD is unmounted while this is up
+     (see BattleSimulation.tsx), but the backdrop and sprites are still there behind it and
+     must not show through the "Why You Won" card or the VICTORY/DEFEAT badge. */
+  background: hsl(220 25% 4% / 0.97);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   animation: arena-fade-in 0.35s ease-out both;
 }
 .arena-results-sheet {

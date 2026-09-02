@@ -35,14 +35,18 @@ interface TerrainTheme {
   rim: string;
 }
 
+// groundNear/groundFar: the ground gradient runs far→near from the horizon line down to
+// the very bottom of the screen (behind the caption bar), so groundFar only needs to read
+// as "a bit darker than groundNear" — on a tall phone viewport that band can be 300px+, and
+// if it dives to near-black the whole lower third of the arena reads as dead space.
 const THEMES: Record<Terrain, TerrainTheme> = {
   city: {
     sky: 'linear-gradient(180deg, #05070f 0%, #0d1630 38%, #2a2350 66%, #6d3352 88%, #93414d 100%)',
     haze: 'hsl(300 60% 60% / 0.18)',
     far: '#0b1226',
     mid: '#05080f',
-    groundNear: '#1d222e',
-    groundFar: '#070910',
+    groundNear: '#262c3c',
+    groundFar: '#141926',
     rim: 'hsl(300 100% 72% / 0.5)',
   },
   island: {
@@ -50,8 +54,8 @@ const THEMES: Record<Terrain, TerrainTheme> = {
     haze: 'hsl(35 80% 65% / 0.22)',
     far: '#0a2119',
     mid: '#04120d',
-    groundNear: '#3b3021',
-    groundFar: '#150f08',
+    groundNear: '#4a3d2a',
+    groundFar: '#26200f',
     rim: 'hsl(45 90% 70% / 0.45)',
   },
   ocean: {
@@ -59,8 +63,8 @@ const THEMES: Record<Terrain, TerrainTheme> = {
     haze: 'hsl(190 100% 70% / 0.2)',
     far: '#04283c',
     mid: '#021620',
-    groundNear: '#0a3448',
-    groundFar: '#01101a',
+    groundNear: '#0f4a63',
+    groundFar: '#082c3d',
     rim: 'hsl(185 100% 70% / 0.5)',
   },
   volcano: {
@@ -68,8 +72,8 @@ const THEMES: Record<Terrain, TerrainTheme> = {
     haze: 'hsl(22 100% 55% / 0.3)',
     far: '#1a0704',
     mid: '#0b0302',
-    groundNear: '#33150c',
-    groundFar: '#0d0403',
+    groundNear: '#421a0e',
+    groundFar: '#220c07',
     rim: 'hsl(20 100% 60% / 0.7)',
   },
   ruins: {
@@ -77,8 +81,8 @@ const THEMES: Record<Terrain, TerrainTheme> = {
     haze: 'hsl(45 40% 65% / 0.18)',
     far: '#141a24',
     mid: '#080b11',
-    groundNear: '#2a2822',
-    groundFar: '#0a0908',
+    groundNear: '#37342b',
+    groundFar: '#1c1a15',
     rim: 'hsl(45 60% 70% / 0.4)',
   },
 };
