@@ -13,7 +13,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Monster } from '@/types/game';
 
-export type VoiceRole = 'narrator' | 'godzilla' | 'announcer' | 'gamer' | 'theatre';
+export type VoiceRole = 'narrator' | 'godzilla' | 'godzilla2' | 'announcer' | 'gamer' | 'theatre';
 
 const MUTE_KEY = 'kaiju-voice-muted';
 const MAX_MEMO = 60;

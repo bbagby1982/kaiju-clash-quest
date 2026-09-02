@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 /**
  * POST /api/voice — ElevenLabs speech and monster roars for the game.
  *
- *   { kind: 'speech', text, voice: 'narrator'|'godzilla'|'announcer'|'gamer'|'theatre' }
+ *   { kind: 'speech', text, voice: 'narrator'|'godzilla'|'godzilla2'|'announcer'|'gamer'|'theatre' }
  *   { kind: 'roar',   prompt }                      → a generated sound effect
  *   { kind: 'voices' }                              → the voice manifest, free, no audio
  *
@@ -20,7 +20,7 @@ import { createHash } from "node:crypto";
  * Family-HQ (netlify/functions/read-list.js there): the same "massive evil ogre" Godzilla,
  * the Quest narrator, the Gamer commentator and the Theatre voice, so the game sounds like
  * the rest of the family's apps. Override any of them in Netlify without a deploy:
- *   ELEVENLABS_VOICE_GODZILLA · ELEVENLABS_VOICE_NARRATOR · ELEVENLABS_VOICE_ANNOUNCER
+ *   ELEVENLABS_VOICE_GODZILLA · ELEVENLABS_VOICE_GODZILLA2 · ELEVENLABS_VOICE_NARRATOR · ELEVENLABS_VOICE_ANNOUNCER
  *   ELEVENLABS_VOICE_GAMER · ELEVENLABS_VOICE_THEATRE · ELEVENLABS_VOICE_FALLBACK
  * Same live finding as Family-HQ (2026-08-28): on the ElevenLabs FREE tier library voices
  * return 402, so a voice problem retries ONCE on the fallback id measured to work there.
@@ -43,6 +43,9 @@ function buildCast(): Record<string, VoiceSpec> { return {
   // ("fJmSoZVxiWuuypwIZMZa - one godzilla voice"). Not a premade; do not revert it. Family-HQ's
   // read-aloud Godzilla (grzhtCJj8HQUDc9xfEIs) stays over there — the two are cast separately.
   godzilla:  { voice: env("ELEVENLABS_VOICE_GODZILLA")  || "fJmSoZVxiWuuypwIZMZa", settings: { stability: 0.35, similarity_boost: 0.80, style: 0.50, use_speaker_boost: true } },
+  // ⭐ OWNER-CAST VOICE, 2026-09-02 — "Ducd71NdsHmshEfzo7mz godzilla 2". The second monster voice:
+  // the player's monster speaks as `godzilla`, the opponent as `godzilla2`, so a fight has two throats.
+  godzilla2: { voice: env("ELEVENLABS_VOICE_GODZILLA2") || "Ducd71NdsHmshEfzo7mz", settings: { stability: 0.35, similarity_boost: 0.80, style: 0.50, use_speaker_boost: true } },
   // Quest narrator — grave, storytelling, a little ominous. The battle captions.
   narrator:  { voice: env("ELEVENLABS_VOICE_NARRATOR")  || "si0svtk05vPEuvwAW93c", settings: { stability: 0.50, similarity_boost: 0.80, style: 0.50, use_speaker_boost: true } },
   // Gamer commentator — quick, punchy. "FIGHT!", "K.O.!", round calls.
