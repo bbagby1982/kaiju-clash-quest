@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const outdir = path.join(root, 'node_modules', '.cache', 'fn-tests');
 fs.rmSync(outdir, { recursive: true, force: true });
-const names = ['roster', 'monster-image', 'upload-monster-image', 'monsters-admin', 'cloud-save', 'battle'];
+const names = ['roster', 'monster-image', 'upload-monster-image', 'monsters-admin', 'cloud-save', 'battle', 'voice'];
 await build({
   entryPoints: names.map((n) => path.join(root, 'netlify/functions', `${n}.mts`)),
   bundle: true, format: 'esm', platform: 'node', outdir, logLevel: 'silent',
@@ -121,6 +121,59 @@ fake.__reset(); env.clear();
   ok(r.status === 503, 'no API key → 503 fast, the client keeps its local caption');
   const bad = await json(await call(fn.battle, 'POST', '/api/battle', { body: { phase: 'intro' } }));
   ok(bad.status === 503 || bad.status === 400, 'missing fighters rejected');
+}
+
+// ── Voice (ElevenLabs) ───────────────────────────────────────────────────
+{
+  const realFetch = globalThis.fetch;
+  const calls = [];
+  const mp3 = new Uint8Array([0x49, 0x44, 0x33, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x21]);
+  let mode = 'ok';
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: String(url), body: JSON.parse(init.body) });
+    if (mode === '402' && !String(url).includes('pNInz6obpgDQGcFmaJgB')) return new Response('{"detail":{"status":"payment_required"}}', { status: 402 });
+    if (mode === '500') return new Response('boom', { status: 500 });
+    return new Response(mp3, { status: 200, headers: { 'content-type': 'audio/mpeg' } });
+  };
+  const ctx = { ip: '1.2.3.4' };
+  const voice = (body) => fn.voice(new Request('https://game.test/api/voice', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }), ctx);
+
+  env.delete('ELEVENLABS_KEY');
+  const manifest = await (await voice({ kind: 'voices' })).json();
+  ok(manifest.voices.godzilla === 'grzhtCJj8HQUDc9xfEIs' && manifest.configured === false, "voice manifest lists Bobbie's Godzilla voice and reports no key");
+  ok((await voice({ kind: 'speech', text: 'ROAR', voice: 'godzilla' })).status === 503, 'no key → 503 (client mutes itself)');
+
+  env.set('ELEVENLABS_KEY', 'xi-test');
+  env.set('ELEVENLABS_VOICE_ANNOUNCER', 'custom-announcer-id');
+  const r1 = await voice({ kind: 'speech', text: 'FIGHT!', voice: 'announcer' });
+  ok(r1.status === 200 && r1.headers.get('content-type') === 'audio/mpeg' && r1.headers.get('x-cache') === 'MISS' && r1.headers.get('x-voice-id') === 'custom-announcer-id', 'speech generated on the env-overridden voice');
+  ok(calls.at(-1).url.includes('custom-announcer-id') && calls.at(-1).body.text === 'FIGHT!' && calls.at(-1).body.model_id === 'eleven_turbo_v2_5', 'ElevenLabs called with the right voice/model/text');
+  const before = calls.length;
+  const r2 = await voice({ kind: 'speech', text: 'FIGHT!', voice: 'announcer' });
+  ok(r2.status === 200 && r2.headers.get('x-cache') === 'HIT' && calls.length === before, 'same line again is a cache HIT with no upstream call');
+  ok((await voice({ kind: 'speech', text: '   ', voice: 'godzilla' })).status === 400, 'empty text rejected');
+
+  mode = '402';
+  const r3 = await voice({ kind: 'speech', text: 'I am the king of the monsters', voice: 'godzilla' });
+  ok(r3.status === 200 && r3.headers.get('x-fell-back') === '1' && r3.headers.get('x-voice-id') === 'pNInz6obpgDQGcFmaJgB', '402 on a library voice retries once on the fallback voice');
+  const r3b = await voice({ kind: 'speech', text: 'I am the king of the monsters', voice: 'godzilla' });
+  ok(r3b.headers.get('x-cache') === 'MISS', 'a fallback clip is never cached under the real voice');
+  mode = '500';
+  ok((await voice({ kind: 'speech', text: 'new line', voice: 'narrator' })).status === 502, 'upstream 500 → 502, no retry');
+  ok(calls.filter((c) => c.body.text === 'new line').length === 1, 'non-voice errors are not retried');
+
+  mode = 'ok';
+  const roar1 = await voice({ kind: 'roar', prompt: 'deep thunderous giant kaiju roar' });
+  ok(roar1.status === 200 && calls.at(-1).url.endsWith('/v1/sound-generation') && calls.at(-1).body.duration_seconds === 3, 'roar uses the sound-effects endpoint');
+  const roar2 = await voice({ kind: 'roar', prompt: 'DEEP thunderous giant KAIJU roar' });
+  ok(roar2.headers.get('x-cache') === 'HIT', 'roar prompts are cached case-insensitively');
+
+  const capCalls = calls.length;
+  let limited = 0;
+  for (let i = 0; i < 160; i++) { const r = await voice({ kind: 'speech', text: `line ${i}`, voice: 'narrator' }); if (r.status === 429) limited++; }
+  ok(limited > 0 && calls.length - capCalls <= 150, `daily cap kicks in (${limited} limited, ${calls.length - capCalls} generated)`);
+
+  globalThis.fetch = realFetch;
 }
 
 console.log(`functions: ${checks} checks passed`);
