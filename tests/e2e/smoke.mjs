@@ -18,7 +18,7 @@ mkdirSync(shots, { recursive: true });
 assert.ok(existsSync(path.join(root, 'dist', 'index.html')), 'run `npm run build` first');
 
 const PORT = 4173 + Math.floor(Math.random() * 500);
-const preview = spawn('npx', ['vite', 'preview', '--host', '127.0.0.1', '--port', String(PORT), '--strictPort'], { cwd: root, stdio: 'pipe' });
+const preview = spawn('npx', ['vite', 'preview', '--host', '127.0.0.1', '--port', String(PORT), '--strictPort'], { cwd: root, stdio: 'pipe', detached: true });
 await new Promise((resolve, reject) => {
   const t = setTimeout(() => reject(new Error('vite preview did not start')), 20000);
   preview.stdout.on('data', (d) => { if (String(d).includes('http')) { clearTimeout(t); resolve(); } });
@@ -167,7 +167,7 @@ for (const [vpName, vp] of Object.entries(VIEWPORTS)) {
 }
 
 await browser.close();
-preview.kill();
+try { process.kill(-preview.pid, 'SIGTERM'); } catch { preview.kill(); } // kill the whole npx→vite process group
 if (errorsSeen.length) console.log('Console/page errors:\n  ' + errorsSeen.join('\n  '));
 if (failures.length) { console.error('FAILURES:\n  ' + failures.join('\n  ')); process.exit(1); }
 console.log(`e2e smoke: ${Object.keys(VIEWPORTS).length} viewports passed, screenshots in tests/e2e/shots/`);
