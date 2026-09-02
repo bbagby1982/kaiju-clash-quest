@@ -97,15 +97,23 @@ function getMonsterEmoji(monsterId: string, monsterName?: string): string {
 }
 
 /**
- * Get monster image source by ID
- * Returns bundled image if available, otherwise tries the cloud API
+ * Bundled (build-time) image for a monster, or undefined.
+ * Prefer `useRoster().imageUrl(id)` in components — it also knows about Canva art
+ * uploaded to the cloud and about custom monsters. This helper exists for the roster
+ * itself and for code that runs outside React.
+ */
+export function getBundledMonsterImage(monsterId: string): string | undefined {
+  return monsterImages[monsterId];
+}
+
+/**
+ * @deprecated Use `useRoster().imageUrl(id)`. Kept so nothing breaks mid-migration:
+ * returns the bundled image, else the cloud URL (which may 404 for monsters with no art).
  */
 export function getMonsterImage(monsterId: string): string | undefined {
-  // First check bundled images (fast, works offline)
   if (monsterImages[monsterId]) {
     return monsterImages[monsterId];
   }
-  // For all other monsters, try loading from Netlify Blobs
   return `/api/monster-image/${monsterId}`;
 }
 

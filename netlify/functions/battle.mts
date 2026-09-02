@@ -1,200 +1,97 @@
 import type { Context, Config } from "@netlify/functions";
+import Anthropic from "@anthropic-ai/sdk";
 
-export default async (req: Request, context: Context) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204 });
-  }
+/**
+ * POST /api/battle — the AI NARRATOR.
+ *
+ * The outcome of every round is decided locally in src/lib/battleEngine.ts and sent
+ * here as "beats". This function only writes the movie-trailer caption for what already
+ * happened, so a slow or missing API key can never stall or change a fight. The client
+ * shows its own fallback caption immediately and swaps in this text when it arrives.
+ *
+ * Response: { narration: string, source: "ai" }  — plain text, 1-3 sentences.
+ */
 
-  if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405 });
-  }
+interface BeatIn { actor: string; action: string; damage?: number; counter?: number; crit?: boolean; blocked?: boolean; missed?: boolean; terrainBoost?: boolean; terrainFlop?: boolean; abilityName?: string }
+
+const SYSTEM = `You are the narrator of KAIJU CLASH QUEST, a monster battle video game made for a very smart 8-year-old Godzilla expert named Alfred. You know every Godzilla era, movie, kaiju and ability, and Alfred will notice if you get lore wrong.
+
+Write ONLY the caption for the moment described — 1 to 3 punchy sentences, cinematic like a Godzilla movie scene. Use sound effects in caps (BOOM, CRASH, WHOOSH). Thrilling, never gory or scary. Reference real Godzilla movie moments when they fit. Never change the facts you are given (who hit whom, how hard, who won). Do not add headings, quotes, JSON or markdown — just the sentences.`;
+
+function describeBeats(beats: BeatIn[], playerName: string, opponentName: string): string {
+  return beats.map((b) => {
+    const who = b.actor === "player" ? playerName : opponentName;
+    const target = b.actor === "player" ? opponentName : playerName;
+    if (b.action === "defend") return `${who} defended${b.counter ? ` and countered ${target} for ${b.counter} damage` : ""}.`;
+    const move = b.action === "special" ? `used ${b.abilityName || "its special ability"}` : b.action === "terrain" ? `used the terrain${b.terrainBoost ? " (home-ground advantage)" : b.terrainFlop ? " (unfamiliar ground, weak)" : ""}` : "attacked";
+    if (b.missed) return `${who} ${move} but MISSED.`;
+    return `${who} ${move} and hit ${target} for ${b.damage} damage${b.crit ? " — CRITICAL HIT" : ""}${b.blocked ? " (partly blocked)" : ""}${b.counter ? `, taking ${b.counter} counter damage` : ""}.`;
+  }).join(" ");
+}
+
+export default async (req: Request, _context: Context) => {
+  if (req.method === "OPTIONS") return new Response(null, { status: 204 });
+  if (req.method !== "POST") return Response.json({ error: "Method not allowed" }, { status: 405 });
 
   const apiKey = Netlify.env.get("ANTHROPIC_API_KEY");
-  if (!apiKey) {
-    return new Response(JSON.stringify({ error: "API key not configured" }), { status: 500 });
+  if (!apiKey) return Response.json({ error: "Narrator not configured (ANTHROPIC_API_KEY missing)", source: "none" }, { status: 503 });
+
+  let body: any;
+  try { body = await req.json(); } catch { return Response.json({ error: "Body must be JSON" }, { status: 400 }); }
+
+  const { phase, player, opponent, map, focus, booster, round, beats, playerHP, opponentHP, winner, history } = body || {};
+  if (!player?.name || !opponent?.name || !map?.name) return Response.json({ error: "player, opponent and map are required" }, { status: 400 });
+
+  const fighter = (m: any) => `${m.name} — "${m.title || ""}" (${m.era || "unknown era"}). Special: ${m.specialAbility?.name || "?"} (${m.specialAbility?.type || "?"}) — ${m.specialAbility?.description || ""}. Strengths: ${(m.strengths || []).join(", ") || "n/a"}. Weaknesses: ${(m.weaknesses || []).join(", ") || "n/a"}.`;
+
+  const context = [
+    `PLAYER (Alfred's monster): ${fighter(player)}`,
+    `OPPONENT: ${fighter(opponent)}`,
+    `BATTLEFIELD: ${map.name} (${map.terrain}) — ${map.description || ""}`,
+    focus ? `BATTLE FOCUS: ${focus}` : "",
+    booster ? `BOOSTER ACTIVE for the player: ${booster.name} — ${booster.description}` : "",
+    Array.isArray(history) && history.length ? `EARLIER: ${history.slice(-3).join(" ")}` : "",
+  ].filter(Boolean).join("\n");
+
+  let ask: string;
+  if (phase === "intro") {
+    ask = `${context}\n\nWrite the opening caption as the two titans face off. Set the scene on this battlefield.`;
+  } else if (phase === "finale") {
+    const w = winner === "player" ? player.name : winner === "opponent" ? opponent.name : "nobody";
+    ask = `${context}\n\nFINAL RESULT: ${w === "nobody" ? "It ended in a TIE" : `${w} WINS`}. Player HP ${playerHP}, opponent HP ${opponentHP}.\n\nWrite the epic finale caption (2-3 sentences) and end with one dramatic line the winner would roar.`;
+  } else {
+    ask = `${context}\n\nROUND ${round || 1}. WHAT HAPPENED (do not change these facts): ${describeBeats(Array.isArray(beats) ? beats : [], player.name, opponent.name)} Player HP now ${playerHP}/100, opponent HP now ${opponentHP}/100.\n\nWrite the caption for this round.`;
   }
 
+  const client = new Anthropic({ apiKey, timeout: 8000, maxRetries: 0 });
+
   try {
-    const body = await req.json();
-    const {
-      playerMonster,
-      opponentMonster,
-      battleFocus,
-      map,
-      booster,
-      round,        // 0 = intro, 1-3 = rounds, 4 = finale
-      playerChoice,  // 'attack' | 'special' | 'defend' | 'terrain'
-      battleHistory, // array of previous round narrations
-      playerHP,
-      opponentHP,
-    } = body;
-
-    const systemPrompt = `You are the narrator of KAIJU CLASH QUEST, an epic monster battle game for a very smart 8-year-old Godzilla expert named Alfred. You know EVERYTHING about Godzilla — every era, every movie, every monster, every ability. Your narrations should be:
-
-- EXCITING and cinematic, like a Godzilla movie scene
-- ACCURATE to actual kaiju lore (Alfred will notice if you get it wrong!)
-- AGE APPROPRIATE — thrilling but not scary or gory
-- Use the monster's actual special abilities and fighting styles
-- Factor in terrain advantages — who has the edge on this map?
-- Keep each narration to 2-3 punchy sentences
-- Use sound effects like BOOM, CRASH, WHOOSH in caps
-- Reference real Godzilla movie moments when relevant
-
-CRITICAL RULES:
-- You must respond ONLY with valid JSON, no markdown, no backticks
-- The battle outcome should feel fair based on stats, terrain, abilities, and player choices
-- Smart choices (using terrain, defending at the right time) should help the player
-- The player's monster should NOT always win — losses should feel dramatic and educational
-- Booster effects should be mentioned when active`;
-
-    let userPrompt = "";
-
-    if (round === 0) {
-      // INTRO ROUND
-      userPrompt = `Generate the battle intro. Here are the details:
-
-PLAYER MONSTER: ${playerMonster.name} — "${playerMonster.title}"
-Era: ${playerMonster.era}
-Stats: Speed ${playerMonster.stats.speed}, Strength ${playerMonster.stats.strength}, Defense ${playerMonster.stats.defense}, Special ${playerMonster.stats.specialAttack}
-Special Ability: ${playerMonster.specialAbility.name} (${playerMonster.specialAbility.type}) — ${playerMonster.specialAbility.description}
-Terrain Bonuses: ${(playerMonster.terrainBonus || []).join(", ") || "none"}
-Strengths: ${(playerMonster.strengths || []).join(", ")}
-Weaknesses: ${(playerMonster.weaknesses || []).join(", ")}
-
-OPPONENT MONSTER: ${opponentMonster.name} — "${opponentMonster.title}"
-Era: ${opponentMonster.era}
-Stats: Speed ${opponentMonster.stats.speed}, Strength ${opponentMonster.stats.strength}, Defense ${opponentMonster.stats.defense}, Special ${opponentMonster.stats.specialAttack}
-Special Ability: ${opponentMonster.specialAbility.name} (${opponentMonster.specialAbility.type}) — ${opponentMonster.specialAbility.description}
-Terrain Bonuses: ${(opponentMonster.terrainBonus || []).join(", ") || "none"}
-
-BATTLEFIELD: ${map.name} (${map.terrain} terrain) — ${map.description}
-BATTLE FOCUS: ${battleFocus}
-${booster ? `BOOSTER ACTIVE: ${booster.name} — ${booster.description}` : "NO BOOSTER"}
-
-Respond with this exact JSON structure:
-{
-  "narration": "The epic intro narration (2-3 exciting sentences setting the scene)",
-  "playerHP": 100,
-  "opponentHP": 100,
-  "choices": ["attack", "special", "defend", "terrain"],
-  "choiceDescriptions": {
-    "attack": "A short description of what attacking means for this monster",
-    "special": "A short description of using ${playerMonster.specialAbility.name}",
-    "defend": "A short description of defending",
-    "terrain": "A short description of using the ${map.terrain} terrain"
-  },
-  "battleOver": false
-}`;
-    } else if (round >= 1 && round <= 3) {
-      // COMBAT ROUNDS
-      userPrompt = `Generate round ${round} of the battle.
-
-PLAYER: ${playerMonster.name} (HP: ${playerHP}/100)
-Stats: Speed ${playerMonster.stats.speed}, Strength ${playerMonster.stats.strength}, Defense ${playerMonster.stats.defense}, Special ${playerMonster.stats.specialAttack}
-Special Ability: ${playerMonster.specialAbility.name} — ${playerMonster.specialAbility.description}
-Terrain Bonuses: ${(playerMonster.terrainBonus || []).join(", ") || "none"}
-
-OPPONENT: ${opponentMonster.name} (HP: ${opponentHP}/100)
-Stats: Speed ${opponentMonster.stats.speed}, Strength ${opponentMonster.stats.strength}, Defense ${opponentMonster.stats.defense}, Special ${opponentMonster.stats.specialAttack}
-Special Ability: ${opponentMonster.specialAbility.name} — ${opponentMonster.specialAbility.description}
-Terrain Bonuses: ${(opponentMonster.terrainBonus || []).join(", ") || "none"}
-
-BATTLEFIELD: ${map.name} (${map.terrain})
-BATTLE FOCUS: ${battleFocus}
-${booster ? `BOOSTER: ${booster.name} (+${booster.power} ${booster.effect})` : "NO BOOSTER"}
-
-PLAYER CHOSE: ${playerChoice}
-
-PREVIOUS ROUNDS:
-${(battleHistory || []).map((h: string, i: number) => `Round ${i}: ${h}`).join("\n") || "None yet"}
-
-Calculate damage based on:
-- The player's choice effectiveness (special attacks do more but leave you open; defend reduces incoming damage; terrain use gives bonus if monster has terrain advantage)
-- Monster stats comparison for the battle focus trait
-- Some randomness (10-25 damage range, modified by stats and choices)
-- Booster bonus if applicable
-- Terrain advantages
-
-Respond with this exact JSON structure:
-{
-  "narration": "What happens this round (2-3 exciting sentences)",
-  "playerDamage": <number 0-30 damage TAKEN by player>,
-  "opponentDamage": <number 0-30 damage TAKEN by opponent>,
-  "playerHP": <updated player HP>,
-  "opponentHP": <updated opponent HP>,
-  "choices": ["attack", "special", "defend", "terrain"],
-  "choiceDescriptions": {
-    "attack": "Short description",
-    "special": "Short description",
-    "defend": "Short description",
-    "terrain": "Short description"
-  },
-  "battleOver": false,
-  "criticalHit": <true if someone landed a huge blow>
-}`;
-    } else {
-      // FINALE (round 4 or HP depleted)
-      const playerWins = (playerHP || 50) > (opponentHP || 50);
-      userPrompt = `Generate the EPIC FINALE of this battle!
-
-PLAYER: ${playerMonster.name} (HP: ${playerHP}/100)
-OPPONENT: ${opponentMonster.name} (HP: ${opponentHP}/100)
-BATTLEFIELD: ${map.name}
-PLAYER CHOSE: ${playerChoice}
-
-PREVIOUS ROUNDS:
-${(battleHistory || []).map((h: string, i: number) => `Round ${i}: ${h}`).join("\n")}
-
-The ${playerWins ? "player" : "opponent"} wins based on remaining HP.
-
-Respond with this exact JSON structure:
-{
-  "narration": "The dramatic finale narration (3-4 sentences, make it EPIC)",
-  "winner": "${playerWins ? "player" : "opponent"}",
-  "playerHP": ${Math.max(0, playerHP || 0)},
-  "opponentHP": ${Math.max(0, opponentHP || 0)},
-  "battleOver": true,
-  "victoryQuote": "A dramatic one-liner from the winning monster"
-}`;
-    }
-
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 1000,
-        system: systemPrompt,
-        messages: [{ role: "user", content: userPrompt }],
-      }),
+    const response = await client.messages.create({
+      model: "claude-opus-5",
+      max_tokens: 300,
+      output_config: { effort: "low" },
+      system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
+      messages: [{ role: "user", content: ask }],
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Claude API error:", errorText);
-      return new Response(JSON.stringify({ error: "AI battle engine error", details: errorText }), { status: 502 });
+    if (response.stop_reason === "refusal") {
+      return Response.json({ error: "Narrator declined", source: "none" }, { status: 502 });
     }
 
-    const data = await response.json();
-    const text = data.content
-      .filter((block: any) => block.type === "text")
-      .map((block: any) => block.text)
-      .join("");
+    const narration = response.content
+      .filter((b) => b.type === "text")
+      .map((b) => (b as { text: string }).text)
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
 
-    // Parse the JSON response, stripping any markdown fences
-    const clean = text.replace(/```json|```/g, "").trim();
-    const battleResult = JSON.parse(clean);
+    if (!narration) return Response.json({ error: "Empty narration", source: "none" }, { status: 502 });
 
-    return new Response(JSON.stringify(battleResult), {
-      headers: { "Content-Type": "application/json" },
-    });
+    return Response.json({ narration, source: "ai" }, { headers: { "Cache-Control": "no-store" } });
   } catch (error: any) {
-    console.error("Battle function error:", error);
-    return new Response(JSON.stringify({ error: "Battle engine failed", message: error.message }), { status: 500 });
+    const status = error instanceof Anthropic.APIError && typeof error.status === "number" ? error.status : 502;
+    console.error("Narrator error:", error?.message || error);
+    return Response.json({ error: "Narrator unavailable", message: error?.message || String(error), source: "none" }, { status: status >= 400 && status < 600 ? status : 502 });
   }
 };
 

@@ -27,7 +27,7 @@ export interface Monster {
   specialAbility: {
     name: string;
     description: string;
-    type: 'beam' | 'melee' | 'area' | 'buff' | 'projectile' | 'debuff' | 'drain' | 'movement' | 'trap';
+    type: 'beam' | 'melee' | 'area' | 'buff' | 'projectile' | 'debuff' | 'drain' | 'movement' | 'trap' | 'energy';
   };
   terrainBonus?: string[];
   rarity: 'common' | 'rare' | 'legendary';
@@ -37,7 +37,14 @@ export interface Monster {
   funFacts?: string[];
   strengths?: string[];
   weaknesses?: string[];
+  /** True when the monster was created in the admin page and lives in Netlify Blobs, not in monsters.ts */
+  custom?: boolean;
+  /** Which way the artwork faces. The arena mirrors the sprite so the two fighters face each other. Default 'right'. */
+  facing?: 'left' | 'right';
 }
+
+/** Editable fields of a custom monster (everything except id/custom). Used by the admin page and /api/admin/monsters. */
+export type CustomMonsterInput = Omit<Monster, 'custom'>;
 
 export interface Booster {
   id: string;
@@ -227,4 +234,4 @@ export interface TrialRequirement {
 }
 
 export type GameMode = 'battle' | 'race';
-export type GameTab = 'battle' | 'race' | 'monsters' | 'encyclopedia';
+export type GameTab = 'home' | 'battle' | 'race' | 'monsters' | 'encyclopedia';

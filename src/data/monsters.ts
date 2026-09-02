@@ -1,4 +1,5 @@
 import { Monster } from '@/types/game';
+import { getBundledMonsterImage } from '@/lib/monsterImages';
 
 export const MONSTERS: Monster[] = [
   // ============= CLASSIC KAIJU (11) =============
@@ -3186,31 +3187,35 @@ export const getMonsterById = (id: string): Monster | undefined => {
   return MONSTERS.find(m => m.id === id);
 };
 
-// IDs of monsters that have real artwork (not emoji fallbacks)
-const MONSTERS_WITH_IMAGES = new Set([
-  'showa-godzilla', 'king-kong', 'heisei-godzilla', 'evolved-godzilla',
-  'millennium-godzilla', 'monsterverse-godzilla', 'burning-godzilla',
-  'kong-armed', 'sharkgera', 'crystal-serpent', 'storm-titan',
-  // Cloud-uploaded via admin
-  'glacius', 'infernox', 'sockzilla', 'mechazord', 'king-ghidorah',
-]);
+// ── Playability ──────────────────────────────────────────────────────────
+// The old hard-coded MONSTERS_WITH_IMAGES set is gone: it meant every Canva upload
+// needed a code change + redeploy before it showed up in the game. Playability now
+// lives in src/lib/roster.tsx (`useRoster().playable`), which also knows about art
+// uploaded to Netlify Blobs and about custom monsters created in /admin.html.
+//
+// The exports below only know about art BUNDLED into the build. They exist so
+// non-React code keeps compiling; components must use `useRoster()`.
 
-/** Only monsters that have real artwork — use this for all player-facing lists */
-export const PLAYABLE_MONSTERS: Monster[] = MONSTERS.filter(m => MONSTERS_WITH_IMAGES.has(m.id));
+/** @deprecated use `useRoster().playable` — this only knows bundled art. */
+export const PLAYABLE_MONSTERS: Monster[] = MONSTERS.filter(m => !!getBundledMonsterImage(m.id));
 
+/** @deprecated use `useRoster().unlocked(ids)` */
 export const getUnlockedMonsters = (unlockedIds: string[]): Monster[] => {
   return PLAYABLE_MONSTERS.filter(m => unlockedIds.includes(m.id));
 };
 
+/** @deprecated use `useRoster().locked(ids)` */
 export const getLockedMonsters = (unlockedIds: string[]): Monster[] => {
   return PLAYABLE_MONSTERS.filter(m => !unlockedIds.includes(m.id));
 };
 
+/** @deprecated use `useRoster().randomOpponent(id)` */
 export const getRandomOpponent = (excludeId: string, _unlockedIds: string[]): Monster => {
   const available = PLAYABLE_MONSTERS.filter(m => m.id !== excludeId);
   return available[Math.floor(Math.random() * available.length)];
 };
 
+/** @deprecated use `useRoster().randomRaceOpponents(id, count)` */
 export const getRandomRaceOpponents = (excludeId: string, count: number = 3): Monster[] => {
   const available = PLAYABLE_MONSTERS.filter(m => m.id !== excludeId);
   const shuffled = [...available].sort(() => Math.random() - 0.5);

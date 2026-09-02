@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { GameProgress, UnlockRequirement, MonsterMasteryProgress, DailyChallenge, DailyChallengeProgress } from '@/types/game';
-import { MONSTERS, PLAYABLE_MONSTERS } from '@/data/monsters';
+import { useRoster } from '@/lib/roster';
 import { 
   generateDailyChallenge, 
   getTodayDate, 
@@ -66,6 +66,11 @@ const MASTERY_REQUIREMENTS = {
 };
 
 export function useGameProgress() {
+  // Static + custom monsters, and which of them have art. Unlocks only ever hand out
+  // monsters that are actually playable (have art), so nothing "invisible" is awarded.
+  const roster = useRoster();
+  const MONSTERS = roster.all;
+  const PLAYABLE_MONSTERS = roster.playable;
   const [progress, setProgress] = useState<GameProgress>(DEFAULT_PROGRESS);
   const [isLoaded, setIsLoaded] = useState(false);
 
@@ -120,9 +125,10 @@ export function useGameProgress() {
         return prog.playerLevel >= req.target;
       case 'no_booster_wins':
         return prog.noBoosterWins >= req.target;
-      case 'monster_mastery':
+      case 'monster_mastery': {
         const mastery = prog.monsterMastery[req.monsterId || ''];
         return mastery?.isMastered || false;
+      }
       case 'theme_gate':
         return prog.unlockedThemes.includes(req.theme || '');
       case 'special_trial':
@@ -145,7 +151,7 @@ export function useGameProgress() {
     if (progress.unlockedMonsters.includes(monsterId)) return true;
     
     return monster.unlockRequirements.every(req => checkRequirement(req, progress));
-  }, [progress, checkRequirement]);
+  }, [progress, checkRequirement, MONSTERS]);
 
   // Get list of newly unlockable monsters
   const getNewlyUnlockableMonsters = useCallback((): string[] => {
@@ -153,7 +159,7 @@ export function useGameProgress() {
       .filter(m => !progress.unlockedMonsters.includes(m.id))
       .filter(m => canUnlockMonster(m.id))
       .map(m => m.id);
-  }, [progress.unlockedMonsters, canUnlockMonster]);
+  }, [progress.unlockedMonsters, canUnlockMonster, MONSTERS]);
 
   // Unlock a specific monster
   const unlockMonster = useCallback((monsterId: string): boolean => {
@@ -217,7 +223,7 @@ export function useGameProgress() {
 
     unlockMonster(toUnlock.id);
     return toUnlock.id;
-  }, [progress.unlockedMonsters, progress.totalMonstersUnlocked, canUnlockMonster, getNewlyUnlockableMonsters, unlockMonster]);
+  }, [progress.unlockedMonsters, progress.totalMonstersUnlocked, canUnlockMonster, getNewlyUnlockableMonsters, unlockMonster, PLAYABLE_MONSTERS]);
 
   // Update monster mastery progress
   const updateMonsterMastery = useCallback((monsterId: string, terrain: string) => {
@@ -368,7 +374,7 @@ export function useGameProgress() {
 
     // Check theme unlocks
     checkThemeUnlocks(progress);
-  }, [updateMonsterMastery, checkThemeUnlocks, progress]);
+  }, [updateMonsterMastery, checkThemeUnlocks, progress, MONSTERS]);
 
   const recordRaceResult = useCallback((won: boolean, terrain?: string, playerMonsterId?: string) => {
     setProgress(prev => {
