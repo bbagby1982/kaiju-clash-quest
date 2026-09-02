@@ -419,6 +419,18 @@
 
 /* ── Tiles (battle focus / booster) ─────────────────────────────────────── */
 
+/* Booster grid: single column on narrow phones so the tile's text has room
+   to wrap at word boundaries instead of squeezing into a ~150px column;
+   two columns once there's enough width for both to breathe. */
+.kq-booster-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.625rem;
+}
+@media (min-width: 480px) {
+  .kq-booster-grid { grid-template-columns: 1fr 1fr; }
+}
+
 .kq-tile {
   position: relative;
   overflow: hidden;

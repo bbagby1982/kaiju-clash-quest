@@ -18,24 +18,31 @@ const tabs: { id: GameTab; label: string; icon: LucideIcon }[] = [
 ];
 
 export function GameLayout({ children, activeTab, onTabChange }: GameLayoutProps) {
+  // The Home tab has its own big logo/byline in the title stage right below —
+  // showing the full wordmark here too reads as a duplicated header, so Home
+  // collapses this bar down to just the mark. Every other tab keeps it.
+  const isHome = activeTab === 'home';
+
   return (
     <div className="min-h-screen flex flex-col bg-background kq-no-x">
-      {/* Header — slim: mark, wordmark, byline */}
+      {/* Header — slim: mark, wordmark, byline (collapsed to just the mark on Home) */}
       <header className="sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur-md kq-safe-top">
         <div className="flex items-center gap-2.5 px-4 py-2">
           <div className="w-9 h-9 rounded-lg bg-primary/15 border border-primary/40 flex items-center justify-center glow-atomic shrink-0">
             <span className="text-xl leading-none" aria-hidden="true">🦎</span>
           </div>
-          <div className="min-w-0">
-            <h1 className="font-orbitron font-black tracking-wider text-base sm:text-lg leading-none truncate">
-              <span className="text-primary text-glow-atomic">KAIJU</span>
-              <span className="text-foreground/70 mx-1">CLASH</span>
-              <span className="text-primary text-glow-atomic">QUEST</span>
-            </h1>
-            <p className="text-[0.6rem] tracking-[0.3em] uppercase text-lightning/80 leading-none mt-1">
-              by Alfred
-            </p>
-          </div>
+          {!isHome && (
+            <div className="min-w-0">
+              <h1 className="font-orbitron font-black tracking-wider text-base sm:text-lg leading-none truncate">
+                <span className="text-primary text-glow-atomic">KAIJU</span>
+                <span className="text-foreground/70 mx-1">CLASH</span>
+                <span className="text-primary text-glow-atomic">QUEST</span>
+              </h1>
+              <p className="text-[0.6rem] tracking-[0.3em] uppercase text-lightning/80 leading-none mt-1">
+                by Alfred
+              </p>
+            </div>
+          )}
         </div>
       </header>
 

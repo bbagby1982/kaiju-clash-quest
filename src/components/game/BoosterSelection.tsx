@@ -41,7 +41,7 @@ export function BoosterSelection({ progress, onSelect, onConfirm }: BoosterSelec
         <p className="text-sm text-muted-foreground">Optional power-up for battle</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-2.5">
+      <div className="kq-booster-grid">
         {/* No Booster */}
         <button
           type="button"

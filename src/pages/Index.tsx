@@ -115,17 +115,25 @@ const Index = () => {
     }
   }, [cloudSave, setProgress, toast]);
 
-  // Sort monsters alphabetically — only the ones with real artwork are playable
-  const sortedMonsters = useMemo(
-    () => [...roster.playable].sort((a, b) => a.name.localeCompare(b.name)),
-    [roster.playable],
-  );
+  // Unlocked monsters first (alphabetical), then locked (alphabetical) — only
+  // the ones with real artwork are playable.
+  const sortedMonsters = useMemo(() => {
+    const unlockedIds = new Set(progress.unlockedMonsters);
+    return [...roster.playable].sort((a, b) => {
+      const unlockedDiff = Number(unlockedIds.has(b.id)) - Number(unlockedIds.has(a.id));
+      return unlockedDiff !== 0 ? unlockedDiff : a.name.localeCompare(b.name);
+    });
+  }, [roster.playable, progress.unlockedMonsters]);
 
-  // The encyclopedia lists EVERY monster; the ones with no art still read as ???
-  const encyclopediaMonsters = useMemo(
-    () => [...roster.all].sort((a, b) => a.name.localeCompare(b.name)),
-    [roster.all],
-  );
+  // The encyclopedia lists EVERY monster; the ones with no art still read as
+  // ???. Discovered (unlocked) monsters lead, each group alphabetical.
+  const encyclopediaMonsters = useMemo(() => {
+    const unlockedIds = new Set(progress.unlockedMonsters);
+    return [...roster.all].sort((a, b) => {
+      const unlockedDiff = Number(unlockedIds.has(b.id)) - Number(unlockedIds.has(a.id));
+      return unlockedDiff !== 0 ? unlockedDiff : a.name.localeCompare(b.name);
+    });
+  }, [roster.all, progress.unlockedMonsters]);
 
   const rosterPending = !roster.ready && roster.playable.length === 0;
 
