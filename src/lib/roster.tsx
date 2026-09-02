@@ -119,12 +119,13 @@ export function buildRoster(manifest: RosterManifest): Pick<Roster, 'all' | 'pla
   }
   const all = [...map.values()];
   const hasArt = (id: string) => !!getBundledMonsterImage(id) || !!manifest.art[id];
+  // CLOUD ART WINS over bundled art: some bundled files (voltara, cyclonix, infernox,
+  // glacius) are placeholder blobs from the April commit, and a Canva upload through
+  // /admin must replace them without a code change.
   const imageUrl = (id: string) => {
-    const bundled = getBundledMonsterImage(id);
-    if (bundled) return bundled;
     const v = manifest.art[id];
     if (v) return `/api/monster-image/${encodeURIComponent(id)}?v=${encodeURIComponent(v)}`;
-    return undefined;
+    return getBundledMonsterImage(id);
   };
   const playable = all.filter(m => hasArt(m.id));
   return { all, playable, byId: (id) => map.get(id), hasArt, imageUrl };

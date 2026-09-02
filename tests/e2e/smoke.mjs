@@ -106,13 +106,16 @@ for (const [vpName, vp] of Object.entries(VIEWPORTS)) {
     await tapText(page, /confirm|next|continue|battle/i);
     await page.waitForTimeout(400);
     // booster: continue without or with one
-    await tapText(page, /fight without booster|fight with|continue/i);
+    await tapText(page, /^fight (without|with)/i);
     await page.waitForTimeout(400);
     await snap(page, `${vpName}-06-focus`);
     await page.getByText(/strength battle/i).first().click();
     await page.waitForTimeout(400);
-    await snap(page, `${vpName}-07-preview`);
-    await tapText(page, /fight|start battle|begin/i);
+    await snap(page, `${vpName}-07-focus-preview`);
+    await tapText(page, /^battle!/i);            // focus preview → battle preview
+    await page.waitForTimeout(400);
+    await snap(page, `${vpName}-07b-preview`);
+    await tapText(page, /^fight/i);              // BattlePreview's FIGHT!
     // Arena
     await page.waitForTimeout(1500);
     await snap(page, `${vpName}-08-arena-intro`);
