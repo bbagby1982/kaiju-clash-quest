@@ -18,7 +18,7 @@ mkdirSync(shots, { recursive: true });
 assert.ok(existsSync(path.join(root, 'dist', 'index.html')), 'run `npm run build` first');
 
 const PORT = 4173 + Math.floor(Math.random() * 500);
-const preview = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { cwd: root, stdio: 'pipe' });
+const preview = spawn('npx', ['vite', 'preview', '--host', '127.0.0.1', '--port', String(PORT), '--strictPort'], { cwd: root, stdio: 'pipe' });
 await new Promise((resolve, reject) => {
   const t = setTimeout(() => reject(new Error('vite preview did not start')), 20000);
   preview.stdout.on('data', (d) => { if (String(d).includes('http')) { clearTimeout(t); resolve(); } });
@@ -60,7 +60,8 @@ async function snap(page, name) { await page.screenshot({ path: path.join(shots,
 async function tapText(page, re, opts = {}) {
   const loc = page.getByRole('button', { name: re }).first();
   await loc.waitFor({ state: 'visible', timeout: opts.timeout ?? 8000 });
-  await loc.click();
+  // force: the big CTAs pulse forever, which Playwright reads as 'not stable'
+  await loc.click({ force: true });
 }
 
 for (const [vpName, vp] of Object.entries(VIEWPORTS)) {

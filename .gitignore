@@ -2,3 +2,4 @@ node_modules
 dist
 .netlify
 bun.lockb
+tests/e2e/shots
