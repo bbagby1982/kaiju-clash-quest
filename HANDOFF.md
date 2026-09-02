@@ -1,8 +1,14 @@
 # HANDOFF — Kaiju Clash Quest redesign (branch `claude/game-animation-monster-redesign-6rdkcp`)
 
-Read this first when picking the game up. Session of 2026-09-02; everything below is
-committed and pushed. The branch is NOT merged to `main` — merging is what deploys it to
-https://godzzillagame.netlify.app/ (the link in Family-HQ's Godzilla tab).
+Read this first when picking the game up. Session of 2026-09-02. The owner merged the
+branch to `main` the same day, so the redesign is LIVE at https://godzzillagame.netlify.app/
+(the link in Family-HQ's Godzilla tab) and `ELEVENLABS_KEY` is set there. Commits after
+the merge (this file, the bundled Chimera Beast art) sit on the branch, rebased on main.
+
+**Netlify env trap:** `ADMIN_KEY` was set before the merge and was gone afterwards (the
+site listed only `ELEVENLABS_KEY`). It has been re-set; functions only see a new env var
+after the NEXT deploy, so `/admin` writes return "ADMIN_KEY is not configured" until
+someone triggers a deploy (Netlify → Deploys → Trigger deploy, or any merge).
 
 ## State of the branch
 - `npm run typecheck` clean · `npm run lint` 0 errors · `npm test` 4,012 engine + 45 function
@@ -25,8 +31,9 @@ https://godzzillagame.netlify.app/ (the link in Family-HQ's Godzilla tab).
   `ADMIN_KEY` set on the site. `ELEVENLABS_KEY` still to be pasted by the owner.
 
 ## Art
-83 of 84 non-bundled monsters have Canva-generated art in the blob store (see
-`/api/roster`). The one still missing after four Canva quota walls (the account allows
+82 of 84 non-bundled monsters have Canva-generated art in the blob store (see
+`/api/roster`), and `chimera-beast` is BUNDLED (`src/assets/monsters/chimera-beast.webp`)
+because its upload hit the ADMIN_KEY trap above. The one still missing after four Canva quota walls (the account allows
 only a couple of generations per window) is `minotaur-prime` — the owner generates it
 in Canva ("towering bull-headed minotaur kaiju, bronze horns, stone maze-wall armour,
 holding a tiny map upside down") and drops it in through `/admin` (Canva link or file).
