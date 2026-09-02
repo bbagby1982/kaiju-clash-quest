@@ -1,6 +1,19 @@
 import type { Context, Config } from "@netlify/functions";
 import { getStore } from "@netlify/blobs";
 
+interface SaveRecord {
+  playerName: string;
+  secretCode: string;
+  progress: unknown;
+  lastSaved: string;
+  savedFrom: string;
+  version: 2;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export default async (req: Request, context: Context) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204 });
@@ -21,12 +34,15 @@ export default async (req: Request, context: Context) => {
     const key = `${playerName.toLowerCase().trim()}`;
 
     try {
-      const raw = await store.get(key);
+      // { type: 'text' } pins the overload that resolves to `string` — the
+      // untyped `store.get(key)` call picks TS's FIRST matching overload
+      // (arrayBuffer), which silently mistypes `raw` and breaks JSON.parse below.
+      const raw = await store.get(key, { type: "text" });
       if (!raw) {
         return new Response(JSON.stringify({ error: "No save found", code: "NOT_FOUND" }), { status: 404 });
       }
 
-      const saveData = JSON.parse(raw);
+      const saveData = JSON.parse(raw) as SaveRecord;
 
       // Verify secret code
       if (saveData.secretCode !== secretCode) {
@@ -41,8 +57,8 @@ export default async (req: Request, context: Context) => {
       }), {
         headers: { "Content-Type": "application/json" },
       });
-    } catch (error: any) {
-      return new Response(JSON.stringify({ error: "Failed to load save", message: error.message }), { status: 500 });
+    } catch (error: unknown) {
+      return new Response(JSON.stringify({ error: "Failed to load save", message: errorMessage(error) }), { status: 500 });
     }
   }
 
@@ -53,6 +69,10 @@ export default async (req: Request, context: Context) => {
 
       if (!playerName || !secretCode || !progress) {
         return new Response(JSON.stringify({ error: "Missing required fields" }), { status: 400 });
+      }
+
+      if (typeof progress !== "object" || Array.isArray(progress)) {
+        return new Response(JSON.stringify({ error: "Progress must be an object" }), { status: 400 });
       }
 
       if (playerName.length < 2 || playerName.length > 20) {
@@ -66,20 +86,21 @@ export default async (req: Request, context: Context) => {
       const key = `${playerName.toLowerCase().trim()}`;
 
       // Check if save exists and verify ownership
-      const existing = await store.get(key);
+      const existing = await store.get(key, { type: "text" });
       if (existing) {
-        const existingData = JSON.parse(existing);
+        const existingData = JSON.parse(existing) as SaveRecord;
         if (existingData.secretCode !== secretCode) {
           return new Response(JSON.stringify({ error: "That player name is taken! Try a different one.", code: "NAME_TAKEN" }), { status: 409 });
         }
       }
 
-      const saveData = {
+      const saveData: SaveRecord = {
         playerName: playerName.trim(),
         secretCode,
         progress,
         lastSaved: new Date().toISOString(),
         savedFrom: device || "unknown",
+        version: 2,
       };
 
       await store.set(key, JSON.stringify(saveData));
@@ -87,11 +108,12 @@ export default async (req: Request, context: Context) => {
       return new Response(JSON.stringify({
         success: true,
         lastSaved: saveData.lastSaved,
+        savedFrom: saveData.savedFrom,
       }), {
         headers: { "Content-Type": "application/json" },
       });
-    } catch (error: any) {
-      return new Response(JSON.stringify({ error: "Failed to save", message: error.message }), { status: 500 });
+    } catch (error: unknown) {
+      return new Response(JSON.stringify({ error: "Failed to save", message: errorMessage(error) }), { status: 500 });
     }
   }
 

@@ -1,0 +1,70 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   RACE MODE — visuals only used by SpectatorRaceTrack + friends.
+   Sprite motion itself (run/hit/victory/idle) lives in src/index.css's
+   "SPRITE + ARENA ANIMATION LIBRARY" via MonsterSprite's data-state — this
+   file only covers race-specific chrome: the camera pan, countdown stamps,
+   the photo-finish flash, and the podium.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.race-track-camera {
+  transition: transform 0.45s cubic-bezier(.22, .8, .3, 1);
+  will-change: transform;
+}
+
+/* A little extra glow under the monster the kid picked, so it reads as
+   "mine" at a glance even while everything is bobbing and boosting. */
+.race-monster--you {
+  filter: drop-shadow(0 0 10px hsl(var(--primary) / 0.55));
+}
+
+/* Countdown numbers stamp in big, hold, then pop back out. */
+.race-countdown-stamp {
+  animation: race-countdown-in 0.35s cubic-bezier(.2, 1.4, .4, 1) both;
+}
+
+@keyframes race-countdown-in {
+  0%   { transform: scale(2.4) rotate(-8deg); opacity: 0; }
+  60%  { transform: scale(0.92) rotate(2deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
+
+/* Photo finish: one bright flash across the whole track, twice, fast. */
+.race-photo-flash {
+  animation: race-photo-flash 0.9s ease-out both;
+}
+
+@keyframes race-photo-flash {
+  0%   { opacity: 0; }
+  8%   { opacity: 1; }
+  20%  { opacity: 0.15; }
+  32%  { opacity: 0.9; }
+  50%  { opacity: 0; }
+  100% { opacity: 0; }
+}
+
+.race-photo-stamp {
+  animation: race-photo-stamp 0.6s cubic-bezier(.2, 1.4, .4, 1) both;
+}
+
+@keyframes race-photo-stamp {
+  0%   { transform: scale(0.4) rotate(-10deg); opacity: 0; }
+  100% { transform: scale(1) rotate(-4deg); opacity: 1; }
+}
+
+/* Podium riser — three blocks of different heights, tallest in the middle. */
+.race-podium-step {
+  transition: height 0.3s ease-out;
+}
+
+.race-podium-step[data-place="1"] { height: 5.5rem; }
+.race-podium-step[data-place="2"] { height: 4rem; }
+.race-podium-step[data-place="3"] { height: 3rem; }
+
+@media (prefers-reduced-motion: reduce) {
+  .race-track-camera { transition: none; }
+  .race-countdown-stamp,
+  .race-photo-flash,
+  .race-photo-stamp {
+    animation: none !important;
+  }
+}

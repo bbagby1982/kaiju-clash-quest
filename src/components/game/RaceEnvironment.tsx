@@ -4,6 +4,8 @@ import { GameMap } from '@/types/game';
 interface RaceEnvironmentProps {
   map: GameMap;
   scrollPosition: number;
+  /** How many lane guides to paint over the track bed. Purely visual — doesn't have to match racer count exactly. */
+  laneCount?: number;
 }
 
 interface EnvironmentLayer {
@@ -12,7 +14,7 @@ interface EnvironmentLayer {
   parallaxSpeed: number;
 }
 
-export function RaceEnvironment({ map, scrollPosition }: RaceEnvironmentProps) {
+export function RaceEnvironment({ map, scrollPosition, laneCount = 4 }: RaceEnvironmentProps) {
   const layers = useMemo(() => getEnvironmentLayers(map, scrollPosition), [map, scrollPosition]);
 
   return (
@@ -28,6 +30,27 @@ export function RaceEnvironment({ map, scrollPosition }: RaceEnvironmentProps) {
           {layer.elements}
         </div>
       ))}
+      <TrackLanes laneCount={laneCount} />
+    </div>
+  );
+}
+
+/** The racetrack bed + dashed lane dividers, painted over whatever terrain is behind it. */
+function TrackLanes({ laneCount }: { laneCount: number }) {
+  const laneTops = Array.from({ length: laneCount }, (_, i) => i * (100 / laneCount) + 100 / laneCount / 2);
+
+  return (
+    <div className="absolute inset-x-0 pointer-events-none" style={{ top: '10%', bottom: '4%' }} aria-hidden="true">
+      <div className="absolute inset-0 bg-gradient-to-b from-black/5 via-black/10 to-black/20" />
+      {laneTops.map((top, i) => (
+        <div
+          key={i}
+          className="absolute left-0 right-0 border-t-2 border-dashed border-white/15"
+          style={{ top: `${top}%` }}
+        />
+      ))}
+      {/* start line */}
+      <div className="absolute top-0 bottom-0 left-[2%] w-1 bg-white/25" />
     </div>
   );
 }

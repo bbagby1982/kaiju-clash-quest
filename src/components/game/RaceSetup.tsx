@@ -1,9 +1,10 @@
 import { useState, useMemo } from 'react';
 import { Monster, GameMap } from '@/types/game';
-import { MONSTERS } from '@/data/monsters';
+import { useRoster } from '@/lib/roster';
 import { Button } from '@/components/ui/button';
 import { MonsterCard } from './MonsterCard';
-import { Trophy, ChevronRight, ChevronLeft, Zap, Shield, Swords, Sparkles, Check, X } from 'lucide-react';
+import { MonsterSprite } from './MonsterSprite';
+import { Trophy, ChevronRight, ChevronLeft, Zap, Check, X, MapPin } from 'lucide-react';
 
 interface RaceSetupProps {
   unlockedMonsterIds: string[];
@@ -14,15 +15,24 @@ interface RaceSetupProps {
 
 type SetupStep = 'select-monsters' | 'predict-winner' | 'map-preview';
 
+const STEPS: { key: SetupStep; label: string }[] = [
+  { key: 'select-monsters', label: 'Pick Racers' },
+  { key: 'predict-winner', label: 'Predict Winner' },
+  { key: 'map-preview', label: 'Start Race' },
+];
+
 export function RaceSetup({ unlockedMonsterIds, availableMaps, onStartRace, onBack }: RaceSetupProps) {
+  const roster = useRoster();
   const [step, setStep] = useState<SetupStep>('select-monsters');
   const [selectedMonsters, setSelectedMonsters] = useState<Monster[]>([]);
   const [predictedWinner, setPredictedWinner] = useState<Monster | null>(null);
   const [selectedMap, setSelectedMap] = useState<GameMap>(availableMaps[Math.floor(Math.random() * availableMaps.length)]);
 
-  const sortedMonsters = useMemo(() => {
-    return [...MONSTERS].sort((a, b) => a.name.localeCompare(b.name));
-  }, []);
+  // Only monsters with real art are ever offered as racers — MonsterCard/MonsterSprite
+  // would otherwise fall back to a generic silhouette for most of the roster.
+  const racePool = useMemo(() => {
+    return [...roster.playable].sort((a, b) => a.name.localeCompare(b.name));
+  }, [roster.playable]);
 
   const toggleMonsterSelection = (monster: Monster) => {
     if (selectedMonsters.find(m => m.id === monster.id)) {
@@ -56,7 +66,7 @@ export function RaceSetup({ unlockedMonsterIds, availableMaps, onStartRace, onBa
       const s = m.stats.speed + (m.terrainBonus?.includes(selectedMap.terrain) ? 15 : 0);
       return sum + s;
     }, 0);
-    return Math.round((totalScore / allScores) * 100);
+    return allScores > 0 ? Math.round((totalScore / allScores) * 100) : 0;
   };
 
   return (
@@ -65,29 +75,20 @@ export function RaceSetup({ unlockedMonsterIds, availableMaps, onStartRace, onBa
       <div className="text-center space-y-2 mb-6">
         <Trophy className="w-12 h-12 mx-auto text-lightning" />
         <h1 className="text-2xl font-orbitron font-bold">Race Setup</h1>
-        
+
         {/* Step indicators */}
         <div className="flex items-center justify-center gap-2 mt-4">
-          <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-sm ${
-            step === 'select-monsters' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
-          }`}>
-            <span>1</span>
-            <span className="hidden sm:inline">Pick Racers</span>
-          </div>
-          <ChevronRight className="w-4 h-4 text-muted-foreground" />
-          <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-sm ${
-            step === 'predict-winner' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
-          }`}>
-            <span>2</span>
-            <span className="hidden sm:inline">Predict Winner</span>
-          </div>
-          <ChevronRight className="w-4 h-4 text-muted-foreground" />
-          <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-sm ${
-            step === 'map-preview' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
-          }`}>
-            <span>3</span>
-            <span className="hidden sm:inline">Start Race</span>
-          </div>
+          {STEPS.map((s, i) => (
+            <div key={s.key} className="flex items-center gap-2">
+              <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-sm ${
+                step === s.key ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
+              }`}>
+                <span>{i + 1}</span>
+                <span className="hidden sm:inline">{s.label}</span>
+              </div>
+              {i < STEPS.length - 1 && <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+            </div>
+          ))}
         </div>
       </div>
 
@@ -107,19 +108,31 @@ export function RaceSetup({ unlockedMonsterIds, availableMaps, onStartRace, onBa
               <h3 className="text-sm font-medium text-muted-foreground mb-3">Race Lineup</h3>
               <div className="flex items-center justify-center gap-3 flex-wrap">
                 {selectedMonsters.map((monster, i) => (
-                  <div 
+                  <button
                     key={monster.id}
-                    className="relative"
+                    type="button"
+                    className="relative group"
                     onClick={() => toggleMonsterSelection(monster)}
+                    aria-label={`Remove ${monster.name}`}
                   >
-                    <div className="w-16 h-16 rounded-lg border-2 border-primary bg-card flex items-center justify-center overflow-hidden cursor-pointer hover:scale-105 transition-transform">
-                      <span className="text-3xl">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '4️⃣'}</span>
+                    <div
+                      className="w-16 h-16 rounded-lg border-2 border-primary overflow-hidden flex items-center justify-center cursor-pointer group-hover:scale-105 transition-transform"
+                      style={{ background: `linear-gradient(160deg, ${monster.imageColor}, hsl(220 25% 6%))` }}
+                    >
+                      {roster.imageUrl(monster.id) ? (
+                        <img src={roster.imageUrl(monster.id)} alt={monster.name} className="w-full h-full object-cover" draggable={false} />
+                      ) : (
+                        <span className="text-3xl">{roster.fallbackEmoji(monster.id)}</span>
+                      )}
                     </div>
+                    <span className="absolute -top-1.5 -left-1.5 text-lg leading-none drop-shadow" aria-hidden="true">
+                      {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '4️⃣'}
+                    </span>
                     <div className="absolute -top-2 -right-2 w-5 h-5 bg-destructive rounded-full flex items-center justify-center">
                       <X className="w-3 h-3 text-destructive-foreground" />
                     </div>
                     <p className="text-xs text-center mt-1 truncate w-16">{monster.name.split(' ')[0]}</p>
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>
@@ -127,25 +140,21 @@ export function RaceSetup({ unlockedMonsterIds, availableMaps, onStartRace, onBa
 
           {/* Monster grid */}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {sortedMonsters.map((monster) => {
+            {racePool.map((monster) => {
               const isUnlocked = unlockedMonsterIds.includes(monster.id);
-              const isSelected = selectedMonsters.find(m => m.id === monster.id);
-              
+              const isSelected = !!selectedMonsters.find(m => m.id === monster.id);
+
               return (
-                <div 
-                  key={monster.id}
-                  onClick={() => isUnlocked && toggleMonsterSelection(monster)}
-                  className={`relative cursor-pointer transition-all ${
-                    !isUnlocked ? 'opacity-50 cursor-not-allowed' : ''
-                  } ${isSelected ? 'ring-2 ring-primary ring-offset-2 ring-offset-background rounded-xl' : ''}`}
-                >
+                <div key={monster.id} className="relative">
                   <MonsterCard
                     monster={monster}
+                    isSelected={isSelected}
                     isLocked={!isUnlocked}
                     size="sm"
+                    onClick={isUnlocked ? () => toggleMonsterSelection(monster) : undefined}
                   />
                   {isSelected && (
-                    <div className="absolute top-2 right-2 w-6 h-6 bg-primary rounded-full flex items-center justify-center">
+                    <div className="absolute top-2 right-2 w-6 h-6 bg-primary rounded-full flex items-center justify-center pointer-events-none">
                       <Check className="w-4 h-4 text-primary-foreground" />
                     </div>
                   )}
@@ -154,13 +163,19 @@ export function RaceSetup({ unlockedMonsterIds, availableMaps, onStartRace, onBa
             })}
           </div>
 
+          {racePool.length === 0 && (
+            <p className="text-center text-sm text-muted-foreground py-8">
+              No racers have artwork yet — check back once some monsters are unlocked!
+            </p>
+          )}
+
           {/* Actions */}
           <div className="flex items-center justify-between pt-4">
             <Button variant="outline" onClick={onBack}>
               <ChevronLeft className="w-4 h-4 mr-1" />
               Back
             </Button>
-            <Button 
+            <Button
               onClick={() => setStep('predict-winner')}
               disabled={!canProceedToPredict}
               className="glow-atomic"
@@ -183,9 +198,9 @@ export function RaceSetup({ unlockedMonsterIds, availableMaps, onStartRace, onBa
           </div>
 
           {/* Map info */}
-          <div 
+          <div
             className="p-3 rounded-lg border text-center"
-            style={{ 
+            style={{
               borderColor: selectedMap.accentColor,
               background: `${selectedMap.accentColor}10`
             }}
@@ -194,7 +209,7 @@ export function RaceSetup({ unlockedMonsterIds, availableMaps, onStartRace, onBa
             <span className="font-bold" style={{ color: selectedMap.accentColor }}>{selectedMap.name}</span>
           </div>
 
-          {/* Monster comparison cards */}
+          {/* Monster comparison cards, with big art */}
           <div className="grid gap-4">
             {selectedMonsters.map((monster) => {
               const hasAdvantage = getTerrainAdvantage(monster);
@@ -202,12 +217,13 @@ export function RaceSetup({ unlockedMonsterIds, availableMaps, onStartRace, onBa
               const isSelected = predictedWinner?.id === monster.id;
 
               return (
-                <div
+                <button
                   key={monster.id}
+                  type="button"
                   onClick={() => setPredictedWinner(monster)}
-                  className={`relative p-4 rounded-xl border-2 cursor-pointer transition-all hover:scale-[1.02] ${
-                    isSelected 
-                      ? 'border-lightning bg-lightning/10 shadow-lg' 
+                  className={`relative p-4 rounded-xl border-2 text-left transition-all hover:scale-[1.02] ${
+                    isSelected
+                      ? 'border-lightning bg-lightning/10 shadow-lg'
                       : 'border-border bg-card hover:border-primary/50'
                   }`}
                 >
@@ -218,14 +234,12 @@ export function RaceSetup({ unlockedMonsterIds, availableMaps, onStartRace, onBa
                   )}
 
                   <div className="flex items-center gap-4">
-                    {/* Monster avatar */}
-                    <div 
-                      className="w-16 h-16 rounded-lg flex items-center justify-center shrink-0"
-                      style={{ background: monster.imageColor }}
+                    {/* Big art */}
+                    <div
+                      className="shrink-0 rounded-lg overflow-hidden"
+                      style={{ background: `linear-gradient(160deg, ${monster.imageColor}, hsl(220 25% 6%))` }}
                     >
-                      <span className="text-2xl font-bold text-white/80">
-                        {monster.name.charAt(0)}
-                      </span>
+                      <MonsterSprite monster={monster} side="left" state="idle" size="sm" shadow={false} />
                     </div>
 
                     {/* Stats */}
@@ -243,7 +257,7 @@ export function RaceSetup({ unlockedMonsterIds, availableMaps, onStartRace, onBa
                       <div className="flex items-center gap-2 text-sm">
                         <Zap className="w-4 h-4 text-lightning shrink-0" />
                         <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-                          <div 
+                          <div
                             className="h-full bg-lightning transition-all"
                             style={{ width: `${monster.stats.speed}%` }}
                           />
@@ -267,7 +281,7 @@ export function RaceSetup({ unlockedMonsterIds, availableMaps, onStartRace, onBa
                       {isSelected && <Check className="w-4 h-4 text-lightning-foreground" />}
                     </div>
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
@@ -278,7 +292,7 @@ export function RaceSetup({ unlockedMonsterIds, availableMaps, onStartRace, onBa
               <ChevronLeft className="w-4 h-4 mr-1" />
               Back
             </Button>
-            <Button 
+            <Button
               onClick={() => setStep('map-preview')}
               disabled={!canStartRace}
               className="glow-atomic"
@@ -301,19 +315,22 @@ export function RaceSetup({ unlockedMonsterIds, availableMaps, onStartRace, onBa
           </div>
 
           {/* Race preview card */}
-          <div 
+          <div
             className="rounded-xl overflow-hidden border-2"
             style={{ borderColor: selectedMap.accentColor }}
           >
             {/* Map header */}
-            <div 
-              className="p-4 text-center"
+            <div
+              className="p-4 text-center space-y-1"
               style={{ background: `linear-gradient(180deg, ${selectedMap.backgroundColor}, transparent)` }}
             >
               <h3 className="font-orbitron font-bold text-lg" style={{ color: selectedMap.accentColor }}>
                 {selectedMap.name}
               </h3>
               <p className="text-sm text-muted-foreground capitalize">{selectedMap.terrain} Terrain</p>
+              {selectedMap.description && (
+                <p className="text-xs text-muted-foreground/80 max-w-sm mx-auto">{selectedMap.description}</p>
+              )}
             </div>
 
             {/* Racers lineup */}
@@ -321,24 +338,21 @@ export function RaceSetup({ unlockedMonsterIds, availableMaps, onStartRace, onBa
               <h4 className="text-sm font-medium text-muted-foreground mb-3 text-center">Competitors</h4>
               <div className="flex items-center justify-center gap-4 flex-wrap">
                 {selectedMonsters.map((monster) => (
-                  <div 
+                  <div
                     key={monster.id}
                     className={`text-center ${monster.id === predictedWinner.id ? 'scale-110' : ''}`}
                   >
-                    <div 
-                      className={`w-14 h-14 rounded-lg flex items-center justify-center mb-1 ${
+                    <div
+                      className={`rounded-lg overflow-hidden mb-1 ${
                         monster.id === predictedWinner.id ? 'ring-2 ring-lightning ring-offset-2 ring-offset-background' : ''
                       }`}
-                      style={{ background: monster.imageColor }}
+                      style={{ background: `linear-gradient(160deg, ${monster.imageColor}, hsl(220 25% 6%))` }}
                     >
-                      {monster.id === predictedWinner.id ? (
-                        <Trophy className="w-6 h-6 text-lightning" />
-                      ) : (
-                        <span className="text-lg font-bold text-white/80">
-                          {monster.name.charAt(0)}
-                        </span>
-                      )}
+                      <MonsterSprite monster={monster} side="left" state="idle" size="xs" shadow={false} />
                     </div>
+                    {monster.id === predictedWinner.id && (
+                      <Trophy className="w-4 h-4 text-lightning mx-auto -mt-1 mb-0.5" />
+                    )}
                     <p className="text-xs truncate w-14">{monster.name.split(' ')[0]}</p>
                     {getTerrainAdvantage(monster) && (
                       <span className="text-[10px] text-primary">+Bonus</span>
@@ -350,20 +364,25 @@ export function RaceSetup({ unlockedMonsterIds, availableMaps, onStartRace, onBa
           </div>
 
           {/* Change map */}
-          <div className="flex items-center justify-center gap-2">
-            <span className="text-sm text-muted-foreground">Change track:</span>
-            <div className="flex gap-2">
+          <div>
+            <p className="text-sm text-muted-foreground text-center mb-2 flex items-center justify-center gap-1">
+              <MapPin className="w-3.5 h-3.5" /> Change track
+            </p>
+            <div className="grid gap-2 sm:grid-cols-2">
               {availableMaps.map((map) => (
                 <button
                   key={map.id}
                   onClick={() => setSelectedMap(map)}
-                  className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
-                    selectedMap.id === map.id 
-                      ? 'bg-primary text-primary-foreground' 
-                      : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                  className={`text-left px-3 py-2 rounded-lg border transition-all ${
+                    selectedMap.id === map.id
+                      ? 'border-primary bg-primary/10'
+                      : 'border-border bg-card hover:border-primary/40'
                   }`}
                 >
-                  {map.terrain}
+                  <p className="text-sm font-semibold" style={{ color: selectedMap.id === map.id ? map.accentColor : undefined }}>
+                    {map.name}
+                  </p>
+                  <p className="text-xs text-muted-foreground capitalize">{map.terrain}</p>
                 </button>
               ))}
             </div>
@@ -375,7 +394,7 @@ export function RaceSetup({ unlockedMonsterIds, availableMaps, onStartRace, onBa
               <ChevronLeft className="w-4 h-4 mr-1" />
               Back
             </Button>
-            <Button 
+            <Button
               onClick={handleStartRace}
               size="lg"
               className="glow-atomic font-orbitron"

@@ -1,6 +1,5 @@
 import { Monster } from '@/types/game';
-import { useMemo } from 'react';
-import { getMonsterImage, getMonsterFallbackEmoji } from '@/lib/monsterImages';
+import { MonsterSprite } from './MonsterSprite';
 
 interface RaceMonsterProps {
   monster: Monster;
@@ -10,6 +9,8 @@ interface RaceMonsterProps {
   isBoosting: boolean;
   isHit: boolean;
   terrain: string;
+  /** The race is over and this monster crossed the line first — plays the victory pose. */
+  isWinner?: boolean;
 }
 
 export function RaceMonster({
@@ -20,15 +21,14 @@ export function RaceMonster({
   isBoosting,
   isHit,
   terrain,
+  isWinner = false,
 }: RaceMonsterProps) {
   const hasTerrainBonus = monster.terrainBonus?.includes(terrain);
-  
-  const monsterImage = useMemo(() => getMonsterImage(monster.id), [monster.id]);
-  const fallbackEmoji = useMemo(() => getMonsterFallbackEmoji(monster.id, monster.name), [monster.id, monster.name]);
+  const spriteState = isWinner ? 'victory' : isHit ? 'hit' : 'run';
 
   return (
     <div
-      className={`absolute transition-all duration-100 ${isHit ? 'animate-shake' : ''}`}
+      className="race-monster absolute transition-[left] duration-100 ease-linear"
       style={{
         left: `${position}%`,
         top: `${lane * 25 + 15}%`,
@@ -38,59 +38,31 @@ export function RaceMonster({
     >
       {/* Terrain bonus aura */}
       {hasTerrainBonus && (
-        <div className="absolute inset-0 -m-3 rounded-full bg-primary/30 animate-pulse blur-md" />
+        <div className="absolute inset-0 -m-3 rounded-full bg-primary/30 animate-pulse blur-md" aria-hidden="true" />
       )}
-      
+
       {/* Speed boost effect */}
       {isBoosting && (
         <>
-          {/* Speed lines */}
-          <div className="absolute right-full top-1/2 -translate-y-1/2 w-20 h-1 bg-gradient-to-l from-lightning to-transparent animate-pulse" />
-          <div className="absolute right-full top-1/3 -translate-y-1/2 w-16 h-0.5 bg-gradient-to-l from-lightning/70 to-transparent animate-pulse" style={{ animationDelay: '0.1s' }} />
-          <div className="absolute right-full top-2/3 -translate-y-1/2 w-16 h-0.5 bg-gradient-to-l from-lightning/70 to-transparent animate-pulse" style={{ animationDelay: '0.2s' }} />
-          
-          {/* Glow effect */}
-          <div className="absolute inset-0 -m-2 rounded-full bg-lightning/40 blur-lg animate-pulse" />
+          <div className="absolute right-full top-1/2 -translate-y-1/2 w-16 h-1 bg-gradient-to-l from-lightning to-transparent animate-pulse" aria-hidden="true" />
+          <div className="absolute right-full top-1/3 -translate-y-1/2 w-12 h-0.5 bg-gradient-to-l from-lightning/70 to-transparent animate-pulse" style={{ animationDelay: '0.1s' }} aria-hidden="true" />
+          <div className="absolute right-full top-2/3 -translate-y-1/2 w-12 h-0.5 bg-gradient-to-l from-lightning/70 to-transparent animate-pulse" style={{ animationDelay: '0.2s' }} aria-hidden="true" />
+          <div className="absolute inset-0 -m-2 rounded-full bg-lightning/40 blur-lg animate-pulse" aria-hidden="true" />
         </>
       )}
-      
-      {/* Monster container */}
-      <div
-        className={`relative w-16 h-16 md:w-20 md:h-20 rounded-lg overflow-hidden flex items-center justify-center ${
-          isPlayer ? 'ring-2 ring-primary glow-atomic' : ''
-        } ${isBoosting ? 'animate-pulse-scale' : ''}`}
-        style={{ background: monster.imageColor }}
-      >
-        {/* Monster image or fallback emoji */}
-        {monsterImage ? (
-          <img
-            src={monsterImage}
-            alt={monster.name}
-            className={`w-full h-full object-cover ${
-              isHit ? 'opacity-50' : ''
-            } ${isBoosting ? 'brightness-125' : ''}`}
-          />
-        ) : (
-          <span className={`text-3xl md:text-4xl ${isHit ? 'opacity-50' : ''}`}>
-            {fallbackEmoji}
-          </span>
-        )}
-        
-        {/* Player indicator */}
+
+      <div className={`relative ${isPlayer ? 'race-monster--you' : ''}`}>
+        <MonsterSprite monster={monster} side="left" state={spriteState} size="sm" shadow dim={isHit} />
+
         {isPlayer && (
-          <div className="absolute -top-2 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-primary text-primary-foreground text-xs font-bold rounded-full">
+          <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-primary text-primary-foreground text-[10px] font-bold rounded-full z-10 shadow">
             YOU
           </div>
         )}
-        
-        {/* Hit flash overlay */}
-        {isHit && (
-          <div className="absolute inset-0 bg-destructive/50 animate-pulse" />
-        )}
       </div>
-      
+
       {/* Name label */}
-      <div className={`absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap text-xs font-medium ${
+      <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] font-medium ${
         isPlayer ? 'text-primary' : 'text-muted-foreground'
       }`}>
         {monster.name.split(' ')[0]}

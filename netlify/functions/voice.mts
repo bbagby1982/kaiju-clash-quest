@@ -39,8 +39,10 @@ const env = (k: string) => Netlify.env.get(k) || undefined;
 
 /** Built per request so env overrides are read live (and so importing this module needs no globals). */
 function buildCast(): Record<string, VoiceSpec> { return {
-  // Bobbie's designed Godzilla — gravelly, theatrical, menacing, absurdly silly.
-  godzilla:  { voice: env("ELEVENLABS_VOICE_GODZILLA")  || "grzhtCJj8HQUDc9xfEIs", settings: { stability: 0.35, similarity_boost: 0.80, style: 0.50, use_speaker_boost: true } },
+  // ⭐ OWNER-CAST VOICE, 2026-09-02 — the Godzilla voice the owner picked for the GAME
+  // ("fJmSoZVxiWuuypwIZMZa - one godzilla voice"). Not a premade; do not revert it. Family-HQ's
+  // read-aloud Godzilla (grzhtCJj8HQUDc9xfEIs) stays over there — the two are cast separately.
+  godzilla:  { voice: env("ELEVENLABS_VOICE_GODZILLA")  || "fJmSoZVxiWuuypwIZMZa", settings: { stability: 0.35, similarity_boost: 0.80, style: 0.50, use_speaker_boost: true } },
   // Quest narrator — grave, storytelling, a little ominous. The battle captions.
   narrator:  { voice: env("ELEVENLABS_VOICE_NARRATOR")  || "si0svtk05vPEuvwAW93c", settings: { stability: 0.50, similarity_boost: 0.80, style: 0.50, use_speaker_boost: true } },
   // Gamer commentator — quick, punchy. "FIGHT!", "K.O.!", round calls.

@@ -140,7 +140,7 @@ fake.__reset(); env.clear();
 
   env.delete('ELEVENLABS_KEY');
   const manifest = await (await voice({ kind: 'voices' })).json();
-  ok(manifest.voices.godzilla === 'grzhtCJj8HQUDc9xfEIs' && manifest.configured === false, "voice manifest lists Bobbie's Godzilla voice and reports no key");
+  ok(manifest.voices.godzilla === 'fJmSoZVxiWuuypwIZMZa' && manifest.configured === false, "voice manifest lists the owner's Godzilla voice and reports no key");
   ok((await voice({ kind: 'speech', text: 'ROAR', voice: 'godzilla' })).status === 503, 'no key → 503 (client mutes itself)');
 
   env.set('ELEVENLABS_KEY', 'xi-test');

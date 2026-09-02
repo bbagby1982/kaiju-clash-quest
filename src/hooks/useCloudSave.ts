@@ -1,7 +1,8 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { GameProgress } from '@/types/game';
 
 const CLOUD_SAVE_KEY = 'kaiju-cloud-save-profile';
+const AUTOLOAD_FLAG_KEY = 'kaiju-cloud-autoloaded';
 
 interface CloudProfile {
   playerName: string;
@@ -110,7 +111,7 @@ export function useCloudSave() {
 
       setState(prev => ({ ...prev, isLoading: false, error: data.error }));
       return { success: false, error: data.error };
-    } catch (error: any) {
+    } catch {
       setState(prev => ({ ...prev, isLoading: false, error: 'Network error — are you online?' }));
       return { success: false, error: 'Network error — are you online?' };
     }
@@ -152,6 +153,12 @@ export function useCloudSave() {
     }
   }, [getProfile]);
 
+  // Metadata from the most recent successful GET — which device the save came
+  // from, and when. A ref (not state) so it's readable synchronously right
+  // after `await autoLoad()` resolves, without waiting on a re-render.
+  const lastSyncMetaRef = useRef<{ lastSaved: string | null; savedFrom: string | null }>({ lastSaved: null, savedFrom: null });
+  const getLastSyncMeta = useCallback(() => lastSyncMetaRef.current, []);
+
   // Load progress from cloud
   const loadFromCloud = useCallback(async (): Promise<GameProgress | null> => {
     const profile = getProfile();
@@ -164,6 +171,7 @@ export function useCloudSave() {
       const data = await res.json();
 
       if (res.ok && data.success) {
+        lastSyncMetaRef.current = { lastSaved: data.lastSaved ?? null, savedFrom: data.savedFrom ?? null };
         setState(prev => ({ ...prev, isLoading: false, lastSynced: data.lastSaved }));
         return data.progress;
       }
@@ -175,6 +183,38 @@ export function useCloudSave() {
       return null;
     }
   }, [getProfile]);
+
+  // Auto-load once per session: called on mount by anything that wants the
+  // freshest cloud copy without the player tapping "Load" themselves. Guarded
+  // two ways — an in-memory ref (survives re-renders within this mount) and a
+  // sessionStorage flag (survives a remount / route change within the tab) —
+  // so a saved profile never triggers more than one silent fetch per session.
+  const autoLoadedRef = useRef(false);
+
+  const autoLoad = useCallback(async (): Promise<GameProgress | null> => {
+    const profile = getProfile();
+    if (!profile) return null;
+
+    if (autoLoadedRef.current) return null;
+
+    let alreadyRanThisSession = false;
+    try {
+      alreadyRanThisSession = sessionStorage.getItem(AUTOLOAD_FLAG_KEY) === 'true';
+    } catch {
+      // sessionStorage blocked (private mode, etc.) — the ref still guards this mount
+    }
+
+    autoLoadedRef.current = true;
+    if (alreadyRanThisSession) return null;
+
+    try {
+      sessionStorage.setItem(AUTOLOAD_FLAG_KEY, 'true');
+    } catch {
+      // storage blocked — the ref above still prevents a second call this mount
+    }
+
+    return loadFromCloud();
+  }, [getProfile, loadFromCloud]);
 
   // Logout
   const logout = useCallback(() => {
@@ -194,6 +234,8 @@ export function useCloudSave() {
     login,
     saveToCloud,
     loadFromCloud,
+    autoLoad,
+    getLastSyncMeta,
     logout,
   };
 }
