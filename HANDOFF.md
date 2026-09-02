@@ -25,9 +25,10 @@ https://godzzillagame.netlify.app/ (the link in Family-HQ's Godzilla tab).
   `ADMIN_KEY` set on the site. `ELEVENLABS_KEY` still to be pasted by the owner.
 
 ## Art
-83 of 84 non-bundled monsters have Canva-generated art in the blob store (see
-`/api/roster`). Missing after two Canva quota walls: `phoenix-titan`, `chimera-beast`,
-`minotaur-prime` — a retry is scheduled; otherwise generate them in `/admin` or Canva.
+82 of 84 non-bundled monsters have Canva-generated art in the blob store (see
+`/api/roster`). Missing after three Canva quota walls (the account allows only a couple
+of generations per window): `chimera-beast`, `minotaur-prime` — one more retry is
+scheduled; otherwise generate them in `/admin` (Canva link or file drop).
 Lesson: Canva's generator sometimes returns a TEXT POSTER TEMPLATE or adds
 watermarks — every image must be looked at before upload (about 1 in 5 first drafts
 were rejected). Legacy PNGs (showa, infernox, glacius, sockzilla, mechazord,
