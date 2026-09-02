@@ -35,10 +35,11 @@ export function UnlockRequirements({ monster, progress }: UnlockRequirementsProp
       case 'no_booster_wins':
         current = progress.noBoosterWins;
         break;
-      case 'monster_mastery':
+      case 'monster_mastery': {
         const mastery = progress.monsterMastery[req.monsterId || ''];
         current = mastery?.isMastered ? 1 : 0;
         break;
+      }
       case 'theme_gate':
         current = progress.unlockedThemes.includes(req.theme || '') ? 1 : 0;
         break;
@@ -109,8 +110,8 @@ export function UnlockRequirements({ monster, progress }: UnlockRequirementsProp
   const difficulty = getDifficultyTier();
 
   return (
-    <div className="space-y-3 p-3 bg-muted/30 rounded-lg border border-border">
-      <div className="flex items-center justify-between">
+    <div className="space-y-3 p-3 kq-panel">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <h4 className="font-orbitron font-bold text-sm text-foreground flex items-center gap-2">
           <Lock className="w-4 h-4 text-muted-foreground" />
           Unlock Requirements

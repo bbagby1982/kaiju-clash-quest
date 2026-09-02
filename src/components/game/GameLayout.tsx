@@ -1,6 +1,7 @@
 import { ReactNode } from 'react';
 import { GameTab } from '@/types/game';
-import { Sword, Trophy, BookOpen, Zap } from 'lucide-react';
+import { Home, Swords, Flag, Dna, BookOpen, LucideIcon } from 'lucide-react';
+import '@/styles/home.css';
 
 interface GameLayoutProps {
   children: ReactNode;
@@ -8,57 +9,61 @@ interface GameLayoutProps {
   onTabChange: (tab: GameTab) => void;
 }
 
-const tabs: { id: GameTab; label: string; icon: typeof Sword }[] = [
-  { id: 'battle', label: 'Battle', icon: Sword },
-  { id: 'race', label: 'Race', icon: Trophy },
-  { id: 'monsters', label: 'My Monsters', icon: Zap },
+const tabs: { id: GameTab; label: string; icon: LucideIcon }[] = [
+  { id: 'home', label: 'Home', icon: Home },
+  { id: 'battle', label: 'Battle', icon: Swords },
+  { id: 'race', label: 'Race', icon: Flag },
+  { id: 'monsters', label: 'Monsters', icon: Dna },
   { id: 'encyclopedia', label: 'Encyclopedia', icon: BookOpen },
 ];
 
 export function GameLayout({ children, activeTab, onTabChange }: GameLayoutProps) {
   return (
-    <div className="min-h-screen flex flex-col bg-background">
-      {/* Header */}
-      <header className="relative py-4 px-6 border-b border-border bg-card/50 backdrop-blur-sm">
-        <div className="flex items-center justify-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center glow-atomic">
-            <span className="text-2xl">🦎</span>
+    <div className="min-h-screen flex flex-col bg-background kq-no-x">
+      {/* Header — slim: mark, wordmark, byline */}
+      <header className="sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur-md kq-safe-top">
+        <div className="flex items-center gap-2.5 px-4 py-2">
+          <div className="w-9 h-9 rounded-lg bg-primary/15 border border-primary/40 flex items-center justify-center glow-atomic shrink-0">
+            <span className="text-xl leading-none" aria-hidden="true">🦎</span>
           </div>
-          <h1 className="text-2xl md:text-3xl font-orbitron font-bold tracking-wider">
-            <span className="text-primary text-glow-atomic">KAIJU</span>
-            <span className="text-muted-foreground mx-1">CLASH</span>
-            <span className="text-primary text-glow-atomic">QUEST</span>
-          </h1>
+          <div className="min-w-0">
+            <h1 className="font-orbitron font-black tracking-wider text-base sm:text-lg leading-none truncate">
+              <span className="text-primary text-glow-atomic">KAIJU</span>
+              <span className="text-foreground/70 mx-1">CLASH</span>
+              <span className="text-primary text-glow-atomic">QUEST</span>
+            </h1>
+            <p className="text-[0.6rem] tracking-[0.3em] uppercase text-lightning/80 leading-none mt-1">
+              by Alfred
+            </p>
+          </div>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="flex-1 overflow-auto">
+      {/* Main content — re-keyed per tab so every switch replays the entrance */}
+      <main key={activeTab} className="flex-1 animate-fade-in kq-no-x">
         {children}
       </main>
 
-      {/* Bottom Navigation */}
-      <nav className="sticky bottom-0 border-t border-border bg-card/95 backdrop-blur-sm safe-area-pb">
-        <div className="flex justify-around items-center py-2">
+      {/* Bottom navigation */}
+      <nav className="sticky bottom-0 z-30 border-t border-border bg-card/95 backdrop-blur-md safe-area-pb">
+        <div className="flex items-stretch gap-0.5 px-1 py-1 max-w-3xl mx-auto">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
             return (
               <button
                 key={tab.id}
+                type="button"
                 onClick={() => onTabChange(tab.id)}
-                className={`flex flex-col items-center gap-1 px-4 py-2 rounded-lg transition-all duration-200 ${
-                  isActive
-                    ? 'text-primary scale-105'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
+                className="kq-nav-item kq-tap"
+                data-active={isActive ? 'true' : 'false'}
+                aria-current={isActive ? 'page' : undefined}
+                aria-label={tab.label}
               >
-                <div className={`p-2 rounded-lg transition-all ${
-                  isActive ? 'bg-primary/20 glow-atomic' : ''
-                }`}>
+                <span className="kq-nav-icon">
                   <Icon className="w-5 h-5" />
-                </div>
-                <span className="text-xs font-medium font-rajdhani">{tab.label}</span>
+                </span>
+                <span className="kq-nav-label">{tab.label}</span>
               </button>
             );
           })}

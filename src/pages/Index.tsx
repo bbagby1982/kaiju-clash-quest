@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import { GameTab, Monster, Booster, GameMap } from '@/types/game';
+import { GameTab, Monster, Booster, GameMap, DailyChallenge } from '@/types/game';
 import { GameLayout } from '@/components/game/GameLayout';
+import { HomeScreen } from '@/components/game/HomeScreen';
 import { MonsterCard } from '@/components/game/MonsterCard';
 import { BattleReadyButton } from '@/components/game/BattleReadyButton';
 import { BoosterSelection } from '@/components/game/BoosterSelection';
@@ -17,15 +18,41 @@ import { ChallengeCompletedModal } from '@/components/game/ChallengeCompletedMod
 import { CloudSavePanel } from '@/components/game/CloudSavePanel';
 import { useGameProgress } from '@/hooks/useGameProgress';
 import { useCloudSave } from '@/hooks/useCloudSave';
-import { MONSTERS, PLAYABLE_MONSTERS } from '@/data/monsters';
+import { useRoster } from '@/lib/roster';
 import { getRandomMap, GAME_MAPS } from '@/data/maps';
-import { Trophy, Swords, BookOpen } from 'lucide-react';
+import { Trophy, Swords, BookOpen, Dna, AlertTriangle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 type GameState = 'menu' | 'setup' | 'booster' | 'focus' | 'preview' | 'battle' | 'race-setup' | 'race';
 
+/** The "you finished today's challenge" payload handed to the celebration modal. */
+interface CompletedChallenge {
+  challenge: DailyChallenge;
+  streak: number;
+}
+
+/** Shown while the roster manifest is still on its way and we have nothing to draw. */
+function SummoningState() {
+  return (
+    <div className="kq-summon">
+      <div className="kq-summon-ring" />
+      <p className="font-orbitron text-sm text-primary">Summoning monsters…</p>
+      <p className="text-xs text-muted-foreground">Waking up the roster</p>
+    </div>
+  );
+}
+
+function RosterNotice({ message }: { message: string }) {
+  return (
+    <div className="flex items-start gap-2 p-2.5 rounded-lg border border-lightning/40 bg-lightning/10 text-[0.7rem] text-lightning">
+      <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+      <span>{message}</span>
+    </div>
+  );
+}
+
 const Index = () => {
-  const [activeTab, setActiveTab] = useState<GameTab>('battle');
+  const [activeTab, setActiveTab] = useState<GameTab>('home');
   const [gameState, setGameState] = useState<GameState>('menu');
   const [selectedMonster, setSelectedMonster] = useState<Monster | null>(null);
   const [opponent, setOpponent] = useState<Monster | null>(null);
@@ -36,19 +63,20 @@ const Index = () => {
   const [battleFocus, setBattleFocus] = useState<BattleFocus | null>(null);
   const [profileMonster, setProfileMonster] = useState<Monster | null>(null);
   const [showChallengeComplete, setShowChallengeComplete] = useState(false);
-  const [lastCompletedChallenge, setLastCompletedChallenge] = useState<{ challenge: any; streak: number } | null>(null);
-  
-  const { 
-    progress, 
+  const [lastCompletedChallenge, setLastCompletedChallenge] = useState<CompletedChallenge | null>(null);
+
+  const {
+    progress,
     setProgress,
-    unlockRandomMonster, 
-    recordBattleResult, 
+    unlockRandomMonster,
+    recordBattleResult,
     recordRaceResult,
     refreshDailyChallenge,
     updateDailyChallengeAfterBattle,
     updateDailyChallengeAfterRace
   } = useGameProgress();
   const cloudSave = useCloudSave();
+  const roster = useRoster();
   const { toast } = useToast();
 
   // Auto-save to cloud after battles/races (when progress changes meaningfully)
@@ -87,10 +115,19 @@ const Index = () => {
     }
   }, [cloudSave, setProgress, toast]);
 
-  // Sort monsters alphabetically — only show ones with real artwork
-  const sortedMonsters = useMemo(() => {
-    return [...PLAYABLE_MONSTERS].sort((a, b) => a.name.localeCompare(b.name));
-  }, []);
+  // Sort monsters alphabetically — only the ones with real artwork are playable
+  const sortedMonsters = useMemo(
+    () => [...roster.playable].sort((a, b) => a.name.localeCompare(b.name)),
+    [roster.playable],
+  );
+
+  // The encyclopedia lists EVERY monster; the ones with no art still read as ???
+  const encyclopediaMonsters = useMemo(
+    () => [...roster.all].sort((a, b) => a.name.localeCompare(b.name)),
+    [roster.all],
+  );
+
+  const rosterPending = !roster.ready && roster.playable.length === 0;
 
   const handleBattleSetupComplete = useCallback((playerMonster: Monster, opponentMonster: Monster) => {
     setSelectedMonster(playerMonster);
@@ -127,25 +164,25 @@ const Index = () => {
 
   const handleBattleEnd = useCallback((won: boolean, opponentId?: string, trait?: string) => {
     const wasCompleted = progress.dailyChallenge?.todayCompleted || false;
-    
+
     recordBattleResult(won, opponentId, trait, currentMap.terrain, !selectedBooster, selectedMonster?.id);
-    
+
     // Update daily challenge progress
     if (won) {
       updateDailyChallengeAfterBattle(true, trait, currentMap.terrain, !!selectedBooster);
     }
-    
+
     if (won) {
       const unlockedId = unlockRandomMonster();
       if (unlockedId) {
-        const monster = MONSTERS.find(m => m.id === unlockedId);
+        const monster = roster.byId(unlockedId);
         toast({
           title: "🎉 New Monster Unlocked!",
           description: `${monster?.name} has joined your roster!`,
         });
       }
     }
-    
+
     // Check if challenge just completed
     setTimeout(() => {
       if (!wasCompleted && progress.dailyChallenge?.todayCompleted && progress.dailyChallenge?.currentChallenge) {
@@ -156,36 +193,36 @@ const Index = () => {
         setShowChallengeComplete(true);
       }
     }, 100);
-    
+
     setGameState('menu');
     setSelectedMonster(null);
     setSelectedBooster(null);
     setBattleFocus(null);
     setOpponent(null);
-  }, [recordBattleResult, unlockRandomMonster, toast, currentMap, selectedBooster, selectedMonster, updateDailyChallengeAfterBattle, progress.dailyChallenge]);
+  }, [recordBattleResult, unlockRandomMonster, toast, currentMap, selectedBooster, selectedMonster, updateDailyChallengeAfterBattle, progress.dailyChallenge, roster]);
 
   const handleRaceEnd = useCallback((winner: Monster, placements: Monster[], predictionCorrect: boolean) => {
     const wasCompleted = progress.dailyChallenge?.todayCompleted || false;
-    
+
     // Count as a win if prediction was correct
     recordRaceResult(predictionCorrect, currentMap.terrain, predictedWinner?.id);
-    
+
     // Update daily challenge progress
     if (predictionCorrect) {
       updateDailyChallengeAfterRace(true);
     }
-    
+
     if (predictionCorrect) {
       const unlockedId = unlockRandomMonster();
       if (unlockedId) {
-        const monster = MONSTERS.find(m => m.id === unlockedId);
+        const monster = roster.byId(unlockedId);
         toast({
           title: "🎉 New Monster Unlocked!",
           description: `${monster?.name} has joined your roster!`,
         });
       }
     }
-    
+
     // Check if challenge just completed
     setTimeout(() => {
       if (!wasCompleted && progress.dailyChallenge?.todayCompleted && progress.dailyChallenge?.currentChallenge) {
@@ -196,11 +233,11 @@ const Index = () => {
         setShowChallengeComplete(true);
       }
     }, 100);
-    
+
     setGameState('menu');
     setRaceMonsters([]);
     setPredictedWinner(null);
-  }, [recordRaceResult, unlockRandomMonster, toast, currentMap, predictedWinner, updateDailyChallengeAfterRace, progress.dailyChallenge]);
+  }, [recordRaceResult, unlockRandomMonster, toast, currentMap, predictedWinner, updateDailyChallengeAfterRace, progress.dailyChallenge, roster]);
 
   const resetSelection = useCallback(() => {
     setGameState('menu');
@@ -210,6 +247,12 @@ const Index = () => {
     setOpponent(null);
     setRaceMonsters([]);
     setPredictedWinner(null);
+  }, []);
+
+  /** Home's mode buttons: switch tabs, and always land on the tab's menu state. */
+  const handleHomeNavigate = useCallback((tab: GameTab) => {
+    setGameState('menu');
+    setActiveTab(tab);
   }, []);
 
   // Monster Profile View
@@ -302,20 +345,28 @@ const Index = () => {
 
   return (
     <GameLayout activeTab={activeTab} onTabChange={setActiveTab}>
-      <div className="p-4 pb-20 animate-fade-in">
-        {/* Challenge Completed Modal */}
-        {showChallengeComplete && lastCompletedChallenge && (
-          <ChallengeCompletedModal
-            challenge={lastCompletedChallenge.challenge}
-            streak={lastCompletedChallenge.streak}
-            onClose={() => setShowChallengeComplete(false)}
-          />
-        )}
+      {/* Challenge Completed Modal */}
+      {showChallengeComplete && lastCompletedChallenge && (
+        <ChallengeCompletedModal
+          challenge={lastCompletedChallenge.challenge}
+          streak={lastCompletedChallenge.streak}
+          onClose={() => setShowChallengeComplete(false)}
+        />
+      )}
 
-        {/* Battle Tab */}
-        {activeTab === 'battle' && (
-          <div className="space-y-6">
-            {/* Cloud Save */}
+      {/* ══ HOME — the title screen ═══════════════════════════════════════ */}
+      {activeTab === 'home' && (
+        <HomeScreen
+          progress={progress}
+          onNavigate={handleHomeNavigate}
+          challengeSlot={
+            <DailyChallengeCard
+              challengeProgress={progress.dailyChallenge}
+              onRefresh={refreshDailyChallenge}
+            />
+          }
+          cloudSlot={
+            /* Mounted on Home (the default tab) so its boot-time auto-load runs. */
             <CloudSavePanel
               isLoggedIn={cloudSave.isLoggedIn}
               playerName={cloudSave.playerName}
@@ -329,112 +380,170 @@ const Index = () => {
               onLogout={cloudSave.logout}
               onCloudProgressLoaded={setProgress}
             />
+          }
+        />
+      )}
 
-            {/* Daily Challenge Card */}
-            <DailyChallengeCard 
-              challengeProgress={progress.dailyChallenge} 
-              onRefresh={refreshDailyChallenge}
-            />
-
-            <div className="text-center space-y-2">
-              <Swords className="w-12 h-12 mx-auto text-primary" />
-              <h2 className="text-2xl font-orbitron font-bold">Battle Mode</h2>
-              <p className="text-muted-foreground">Select your monster and fight!</p>
-              <p className="text-xs text-lightning">Level {progress.playerLevel}</p>
-            </div>
-            
-            {gameState === 'booster' && selectedMonster ? (
-              <BoosterSelection
-                progress={progress}
-                onSelect={setSelectedBooster}
-                onConfirm={handleBoosterConfirm}
-              />
-            ) : (
-              <div className="text-center">
-                <BattleReadyButton onClick={() => setGameState('setup')} label="Start Battle" />
+      {activeTab !== 'home' && (
+        <div className="p-4 kq-screen-pad max-w-3xl mx-auto kq-screen-in">
+          {/* ══ BATTLE ═══════════════════════════════════════════════════ */}
+          {activeTab === 'battle' && (
+            <div className="space-y-5">
+              <div className="text-center space-y-1.5">
+                <Swords className="w-11 h-11 mx-auto text-primary" />
+                <h2 className="text-2xl font-orbitron font-black text-title-glow">Battle Mode</h2>
+                <p className="text-muted-foreground text-sm">Select your monster and fight!</p>
+                <p className="text-xs text-lightning">Level {progress.playerLevel}</p>
               </div>
-            )}
 
-            <div className="flex justify-center gap-8 text-center pt-4">
-              <div><span className="text-2xl font-orbitron text-primary">{progress.wins}</span><p className="text-xs text-muted-foreground">Wins</p></div>
-              <div><span className="text-2xl font-orbitron text-destructive">{progress.losses}</span><p className="text-xs text-muted-foreground">Losses</p></div>
-            </div>
-          </div>
-        )}
+              {roster.error && <RosterNotice message={roster.error} />}
 
-        {/* Race Tab */}
-        {activeTab === 'race' && (
-          <div className="space-y-6">
-            {/* Daily Challenge Card */}
-            <DailyChallengeCard 
-              challengeProgress={progress.dailyChallenge} 
-              onRefresh={refreshDailyChallenge}
-            />
-
-            <div className="text-center space-y-2">
-              <Trophy className="w-12 h-12 mx-auto text-lightning" />
-              <h2 className="text-2xl font-orbitron font-bold">Race Prediction</h2>
-              <p className="text-muted-foreground">Pick the monsters and predict the winner!</p>
-            </div>
-            
-            <div className="text-center">
-              <p className="text-sm text-muted-foreground mb-4">
-                Select 2-4 monsters to race, then predict who will win!
-              </p>
-              <BattleReadyButton onClick={handleStartRaceSetup} label="Set Up Race" />
-            </div>
-
-            <div className="flex justify-center gap-8 text-center pt-4">
-              <div><span className="text-2xl font-orbitron text-primary">{progress.racesWon}</span><p className="text-xs text-muted-foreground">Correct</p></div>
-              <div><span className="text-2xl font-orbitron text-destructive">{progress.racesLost}</span><p className="text-xs text-muted-foreground">Wrong</p></div>
-            </div>
-          </div>
-        )}
-
-        {/* My Monsters Tab */}
-        {activeTab === 'monsters' && (
-          <div className="space-y-6">
-            <div className="text-center space-y-2">
-              <h2 className="text-2xl font-orbitron font-bold">My Monsters</h2>
-              <p className="text-muted-foreground">{progress.unlockedMonsters.length} / {PLAYABLE_MONSTERS.length} Unlocked</p>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {sortedMonsters.map((monster) => (
-                <div key={monster.id} onClick={() => setProfileMonster(monster)} className="cursor-pointer">
-                  <MonsterCard
-                    monster={monster}
-                    isLocked={!progress.unlockedMonsters.includes(monster.id)}
-                    size="lg"
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Encyclopedia Tab */}
-        {activeTab === 'encyclopedia' && (
-          <div className="space-y-6">
-            <div className="text-center space-y-2">
-              <BookOpen className="w-12 h-12 mx-auto text-electric" />
-              <h2 className="text-2xl font-orbitron font-bold">Monster Encyclopedia</h2>
-              <p className="text-sm text-muted-foreground">
-                {progress.unlockedMonsters.length} discovered • Tap any monster to learn more!
-              </p>
-            </div>
-            <div className="space-y-3">
-              {sortedMonsters.map((monster) => (
-                <EncyclopediaEntry
-                  key={monster.id}
-                  monster={monster}
-                  isUnlocked={progress.unlockedMonsters.includes(monster.id)}
-                  onClick={() => setProfileMonster(monster)}
+              {gameState === 'booster' && selectedMonster ? (
+                <BoosterSelection
+                  progress={progress}
+                  onSelect={setSelectedBooster}
+                  onConfirm={handleBoosterConfirm}
                 />
-              ))}
+              ) : rosterPending ? (
+                <SummoningState />
+              ) : (
+                <div className="flex justify-center">
+                  <BattleReadyButton onClick={() => setGameState('setup')} label="Start Battle" />
+                </div>
+              )}
+
+              <DailyChallengeCard
+                challengeProgress={progress.dailyChallenge}
+                onRefresh={refreshDailyChallenge}
+              />
+
+              <div className="grid grid-cols-2 gap-3 max-w-xs mx-auto">
+                <div className="kq-chip">
+                  <span className="kq-chip-value text-primary">{progress.wins}</span>
+                  <span className="kq-chip-label">Wins</span>
+                </div>
+                <div className="kq-chip">
+                  <span className="kq-chip-value text-destructive">{progress.losses}</span>
+                  <span className="kq-chip-label">Losses</span>
+                </div>
+              </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+
+          {/* ══ RACE ═════════════════════════════════════════════════════ */}
+          {activeTab === 'race' && (
+            <div className="space-y-5">
+              <div className="text-center space-y-1.5">
+                <Trophy className="w-11 h-11 mx-auto text-lightning" />
+                <h2 className="text-2xl font-orbitron font-black text-title-glow">Race Prediction</h2>
+                <p className="text-muted-foreground text-sm">Pick the monsters and predict the winner!</p>
+              </div>
+
+              {roster.error && <RosterNotice message={roster.error} />}
+
+              <div className="text-center space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Select 2-4 monsters to race, then predict who will win!
+                </p>
+                {rosterPending ? (
+                  <SummoningState />
+                ) : (
+                  <div className="flex justify-center">
+                    <BattleReadyButton onClick={handleStartRaceSetup} label="Set Up Race" />
+                  </div>
+                )}
+              </div>
+
+              <DailyChallengeCard
+                challengeProgress={progress.dailyChallenge}
+                onRefresh={refreshDailyChallenge}
+              />
+
+              <div className="grid grid-cols-2 gap-3 max-w-xs mx-auto">
+                <div className="kq-chip">
+                  <span className="kq-chip-value text-primary">{progress.racesWon}</span>
+                  <span className="kq-chip-label">Correct</span>
+                </div>
+                <div className="kq-chip">
+                  <span className="kq-chip-value text-destructive">{progress.racesLost}</span>
+                  <span className="kq-chip-label">Wrong</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ══ MY MONSTERS ══════════════════════════════════════════════ */}
+          {activeTab === 'monsters' && (
+            <div className="space-y-5">
+              <div className="text-center space-y-1.5">
+                <Dna className="w-11 h-11 mx-auto text-electric" />
+                <h2 className="text-2xl font-orbitron font-black text-title-glow">My Monsters</h2>
+                <p className="text-muted-foreground text-sm">
+                  {progress.unlockedMonsters.length} / {roster.playable.length} Unlocked
+                </p>
+              </div>
+
+              {roster.error && <RosterNotice message={roster.error} />}
+
+              {rosterPending ? (
+                <SummoningState />
+              ) : sortedMonsters.length === 0 ? (
+                <div className="kq-summon">
+                  <span className="text-5xl" aria-hidden="true">🥚</span>
+                  <p className="font-orbitron text-sm text-foreground">No monster art yet</p>
+                  <p className="text-xs text-muted-foreground max-w-xs">
+                    Upload art in the admin page and your kaiju will appear right here.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {sortedMonsters.map((monster, i) => (
+                    <div key={monster.id} className="kq-stagger" style={{ '--i': i } as React.CSSProperties}>
+                      <MonsterCard
+                        monster={monster}
+                        isLocked={!progress.unlockedMonsters.includes(monster.id)}
+                        onClick={() => setProfileMonster(monster)}
+                        size="lg"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ══ ENCYCLOPEDIA ═════════════════════════════════════════════ */}
+          {activeTab === 'encyclopedia' && (
+            <div className="space-y-5">
+              <div className="text-center space-y-1.5">
+                <BookOpen className="w-11 h-11 mx-auto text-electric" />
+                <h2 className="text-2xl font-orbitron font-black text-title-glow">Monster Encyclopedia</h2>
+                <p className="text-sm text-muted-foreground">
+                  {progress.unlockedMonsters.length} discovered • Tap any monster to learn more!
+                </p>
+              </div>
+
+              {roster.error && <RosterNotice message={roster.error} />}
+
+              {rosterPending ? (
+                <SummoningState />
+              ) : (
+                <div className="space-y-2.5">
+                  {encyclopediaMonsters.map((monster, i) => (
+                    <div key={monster.id} className="kq-stagger" style={{ '--i': Math.min(i, 12) } as React.CSSProperties}>
+                      <EncyclopediaEntry
+                        monster={monster}
+                        isUnlocked={progress.unlockedMonsters.includes(monster.id)}
+                        onClick={() => setProfileMonster(monster)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </GameLayout>
   );
 };

@@ -1,9 +1,7 @@
 import { useState } from 'react';
 import { Monster } from '@/types/game';
-import { Gauge, Zap, Shield, Sparkles, Shuffle, ChevronRight, Swords } from 'lucide-react';
-import { getMonsterImage } from '@/lib/monsterImages';
-
-import { Flame, Focus, Bomb } from 'lucide-react';
+import { Gauge, Zap, Shield, Sparkles, Shuffle, ChevronRight, ArrowLeft, Flame, Focus, Bomb } from 'lucide-react';
+import { MonsterSprite } from './MonsterSprite';
 
 export type BattleFocus = 'speed' | 'strength' | 'defense' | 'specialAttack' | 'fireVsIce' | 'focusVsDistraction' | 'allOut' | 'random';
 
@@ -46,7 +44,7 @@ const battleFocusOptions: BattleFocusOption[] = [
     label: 'Special Attack Battle',
     description: 'The most powerful ability wins!',
     icon: <Sparkles className="w-6 h-6" />,
-    color: 'hsl(var(--lightning))',
+    color: 'hsl(var(--lightning-yellow))',
     kidFriendlyExplanation: 'This battle is about special powers. The monster with the coolest and strongest ability wins!',
   },
   {
@@ -70,7 +68,7 @@ const battleFocusOptions: BattleFocusOption[] = [
     label: '💥 All-Out Brawl',
     description: 'Everything counts!',
     icon: <Bomb className="w-6 h-6" />,
-    color: 'hsl(var(--lightning))',
+    color: 'hsl(var(--lightning-yellow))',
     kidFriendlyExplanation: 'No holds barred! ALL your stats get added up. The best overall monster wins this one!',
   },
   {
@@ -88,15 +86,19 @@ const getMonsterAdvice = (monster: Monster, focus: BattleFocus): { good: boolean
   if (focus === 'random') {
     return { good: true, text: 'Balanced fighter' };
   }
-  
+
   const stat = monster.stats[focus as keyof typeof monster.stats];
   const avgStat = (monster.stats.speed + monster.stats.strength + monster.stats.defense + monster.stats.specialAttack) / 4;
-  
+
   if (stat >= 85) return { good: true, text: `Excellent ${focus}!` };
   if (stat >= 70) return { good: true, text: `Good ${focus}` };
   if (stat < avgStat - 10) return { good: false, text: `Weak in ${focus}` };
   return { good: true, text: 'Average' };
 };
+
+/** True for the combo focuses that don't map onto a single stat. */
+const isStatFocus = (focus: BattleFocus): focus is 'speed' | 'strength' | 'defense' | 'specialAttack' =>
+  focus === 'speed' || focus === 'strength' || focus === 'defense' || focus === 'specialAttack';
 
 interface BattleFocusSelectionProps {
   playerMonster: Monster;
@@ -122,191 +124,178 @@ export function BattleFocusSelection({ playerMonster, opponent, onSelectFocus, o
 
   const selectedOption = battleFocusOptions.find(o => o.key === selectedFocus);
 
-  // Preview mode - show battle preview
+  // ── Preview mode ────────────────────────────────────────────────────
   if (showPreview && selectedFocus && selectedOption) {
     const playerAdvice = getMonsterAdvice(playerMonster, selectedFocus);
     const opponentAdvice = getMonsterAdvice(opponent, selectedFocus);
-    
+
     return (
-      <div className="min-h-screen p-4 flex flex-col bg-gradient-to-b from-background to-card animate-fade-in">
-        <div className="text-center mb-6">
-          <h1 className="font-orbitron font-bold text-2xl text-primary">Battle Preview</h1>
-        </div>
-
-        {/* Battle Focus Banner */}
-        <div 
-          className="p-4 rounded-xl mb-6 text-center"
-          style={{ backgroundColor: `${selectedOption.color}20`, borderColor: selectedOption.color }}
-        >
-          <div className="flex items-center justify-center gap-2 mb-2" style={{ color: selectedOption.color }}>
-            {selectedOption.icon}
-            <span className="font-orbitron font-bold text-lg">{selectedOption.label}</span>
-          </div>
-          <p className="text-sm text-foreground">{selectedOption.kidFriendlyExplanation}</p>
-        </div>
-
-        {/* Monster Matchup */}
-        <div className="flex items-start gap-4 mb-6">
-          {/* Player */}
-          <div className="flex-1 text-center">
-            <div 
-              className="w-24 h-24 mx-auto rounded-xl overflow-hidden border-2 border-primary mb-3"
-              style={{ background: playerMonster.imageColor }}
-            >
-              <img 
-                src={getMonsterImage(playerMonster.id)}
-                alt={playerMonster.name}
-                className="w-full h-full object-cover"
-              />
-            </div>
-            <h3 className="font-orbitron font-bold text-sm text-primary">{playerMonster.name}</h3>
-            
-            {/* Stat for this focus */}
-            {selectedFocus !== 'random' && (
-              <div 
-                className="mt-2 px-3 py-1 rounded-lg inline-block"
-                style={{ backgroundColor: `${selectedOption.color}20` }}
-              >
-                <span className="font-bold" style={{ color: selectedOption.color }}>
-                  {playerMonster.stats[selectedFocus as keyof typeof playerMonster.stats]}
-                </span>
-              </div>
-            )}
-            
-            {/* Advice */}
-            <p className={`text-xs mt-2 ${playerAdvice.good ? 'text-primary' : 'text-destructive'}`}>
-              {playerAdvice.text}
-            </p>
-          </div>
-
-          {/* VS */}
-          <div className="flex flex-col items-center justify-center pt-8">
-            <Swords className="w-8 h-8 text-muted-foreground mb-2" />
-            <span className="text-xs text-muted-foreground">VS</span>
-          </div>
-
-          {/* Opponent */}
-          <div className="flex-1 text-center">
-            <div 
-              className="w-24 h-24 mx-auto rounded-xl overflow-hidden border-2 border-destructive mb-3"
-              style={{ background: opponent.imageColor }}
-            >
-              <img 
-                src={getMonsterImage(opponent.id)}
-                alt={opponent.name}
-                className="w-full h-full object-cover"
-              />
-            </div>
-            <h3 className="font-orbitron font-bold text-sm text-destructive">{opponent.name}</h3>
-            
-            {/* Stat for this focus */}
-            {selectedFocus !== 'random' && (
-              <div 
-                className="mt-2 px-3 py-1 rounded-lg inline-block"
-                style={{ backgroundColor: `${selectedOption.color}20` }}
-              >
-                <span className="font-bold" style={{ color: selectedOption.color }}>
-                  {opponent.stats[selectedFocus as keyof typeof opponent.stats]}
-                </span>
-              </div>
-            )}
-            
-            {/* Advice */}
-            <p className={`text-xs mt-2 ${opponentAdvice.good ? 'text-destructive' : 'text-primary'}`}>
-              {opponentAdvice.text}
-            </p>
-          </div>
-        </div>
-
-        {/* Monster Descriptions */}
-        <div className="space-y-3 mb-6">
-          <div className="p-3 rounded-lg bg-primary/10 border border-primary/20">
-            <p className="text-sm">
-              <span className="font-bold text-primary">{playerMonster.name}</span>
-              {' is '}
-              {playerMonster.stats.strength >= 80 ? 'strong and heavy' : 
-               playerMonster.stats.speed >= 80 ? 'fast and agile' :
-               playerMonster.stats.defense >= 80 ? 'tough and armored' :
-               'well-balanced'}
-              {'.'}
-            </p>
-          </div>
-          <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20">
-            <p className="text-sm">
-              <span className="font-bold text-destructive">{opponent.name}</span>
-              {' is '}
-              {opponent.stats.strength >= 80 ? 'powerful but maybe slow' : 
-               opponent.stats.speed >= 80 ? 'quick but might lack power' :
-               opponent.stats.defense >= 80 ? 'hard to hurt' :
-               'a tricky fighter'}
-              {'.'}
-            </p>
-          </div>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="mt-auto flex gap-3">
+      <div className="min-h-screen flex flex-col bg-background kq-no-x kq-screen-in">
+        <div className="sticky top-0 z-20 flex items-center gap-3 px-4 py-3 bg-background/85 backdrop-blur-md border-b border-border kq-safe-top">
           <button
+            type="button"
             onClick={() => setShowPreview(false)}
-            className="flex-1 px-4 py-3 rounded-xl font-bold bg-muted text-foreground hover:bg-muted/80 transition-colors"
+            className="kq-tap p-2.5 rounded-xl bg-muted hover:bg-muted/70 transition-colors"
+            aria-label="Change Focus"
           >
-            Change Focus
+            <ArrowLeft className="w-5 h-5" />
           </button>
-          <button
-            onClick={handleConfirm}
-            className="flex-1 px-4 py-3 rounded-xl font-orbitron font-bold bg-primary text-primary-foreground hover:scale-105 transition-transform glow-atomic flex items-center justify-center gap-2"
+          <h1 className="font-orbitron font-black text-lg text-primary">Battle Preview</h1>
+        </div>
+
+        <div className="flex-1 px-3 pt-4 kq-screen-pad max-w-2xl w-full mx-auto">
+          {/* Battle Focus Banner */}
+          <div
+            className="p-4 rounded-2xl border-2 mb-5 text-center"
+            style={{ backgroundColor: `${selectedOption.color}1f`, borderColor: selectedOption.color }}
           >
-            Battle! <ChevronRight className="w-5 h-5" />
-          </button>
+            <div className="flex items-center justify-center gap-2 mb-2" style={{ color: selectedOption.color }}>
+              {selectedOption.icon}
+              <span className="font-orbitron font-bold text-lg">{selectedOption.label}</span>
+            </div>
+            <p className="text-sm text-foreground">{selectedOption.kidFriendlyExplanation}</p>
+          </div>
+
+          {/* Monster Matchup */}
+          <div className="flex items-end justify-between gap-1 mb-5">
+            <div className="flex-1 min-w-0 flex flex-col items-center text-center">
+              <MonsterSprite monster={playerMonster} size="md" state="idle" side="left" shadow />
+              <h3 className="font-orbitron font-bold text-sm text-primary mt-2 truncate max-w-full">{playerMonster.name}</h3>
+
+              {isStatFocus(selectedFocus) && (
+                <div
+                  className="mt-1.5 px-3 py-1 rounded-lg inline-block"
+                  style={{ backgroundColor: `${selectedOption.color}25` }}
+                >
+                  <span className="font-orbitron font-bold" style={{ color: selectedOption.color }}>
+                    {playerMonster.stats[selectedFocus]}
+                  </span>
+                </div>
+              )}
+
+              <p className={`text-xs mt-1.5 ${playerAdvice.good ? 'text-primary' : 'text-destructive'}`}>
+                {playerAdvice.text}
+              </p>
+            </div>
+
+            <div className="flex flex-col items-center justify-center pb-8 shrink-0">
+              <span className="kq-vs">VS</span>
+            </div>
+
+            <div className="flex-1 min-w-0 flex flex-col items-center text-center">
+              <MonsterSprite monster={opponent} size="md" state="idle" side="right" shadow />
+              <h3 className="font-orbitron font-bold text-sm text-destructive mt-2 truncate max-w-full">{opponent.name}</h3>
+
+              {isStatFocus(selectedFocus) && (
+                <div
+                  className="mt-1.5 px-3 py-1 rounded-lg inline-block"
+                  style={{ backgroundColor: `${selectedOption.color}25` }}
+                >
+                  <span className="font-orbitron font-bold" style={{ color: selectedOption.color }}>
+                    {opponent.stats[selectedFocus]}
+                  </span>
+                </div>
+              )}
+
+              <p className={`text-xs mt-1.5 ${opponentAdvice.good ? 'text-destructive' : 'text-primary'}`}>
+                {opponentAdvice.text}
+              </p>
+            </div>
+          </div>
+
+          {/* Monster Descriptions */}
+          <div className="space-y-3 mb-6">
+            <div className="p-3 rounded-xl bg-primary/10 border border-primary/20">
+              <p className="text-sm">
+                <span className="font-bold text-primary">{playerMonster.name}</span>
+                {' is '}
+                {playerMonster.stats.strength >= 80 ? 'strong and heavy' :
+                 playerMonster.stats.speed >= 80 ? 'fast and agile' :
+                 playerMonster.stats.defense >= 80 ? 'tough and armored' :
+                 'well-balanced'}
+                {'.'}
+              </p>
+            </div>
+            <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/20">
+              <p className="text-sm">
+                <span className="font-bold text-destructive">{opponent.name}</span>
+                {' is '}
+                {opponent.stats.strength >= 80 ? 'powerful but maybe slow' :
+                 opponent.stats.speed >= 80 ? 'quick but might lack power' :
+                 opponent.stats.defense >= 80 ? 'hard to hurt' :
+                 'a tricky fighter'}
+                {'.'}
+              </p>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => setShowPreview(false)}
+              className="kq-tap flex-1 px-4 py-4 rounded-xl font-bold bg-muted text-foreground hover:bg-muted/80 transition-colors"
+            >
+              Change Focus
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirm}
+              className="kq-tap flex-1 px-4 py-4 rounded-xl font-orbitron font-bold bg-primary text-primary-foreground hover:scale-105 transition-transform glow-atomic flex items-center justify-center gap-2"
+            >
+              Battle! <ChevronRight className="w-5 h-5" />
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
-  // Focus selection mode
+  // ── Focus selection ─────────────────────────────────────────────────
   return (
-    <div className="min-h-screen p-4 flex flex-col bg-gradient-to-b from-background to-card animate-fade-in">
-      <div className="text-center mb-6">
-        <h1 className="font-orbitron font-bold text-2xl text-primary mb-2">Choose Battle Focus</h1>
-        <p className="text-sm text-muted-foreground">What will this battle test?</p>
-      </div>
-
-      {/* Battle Focus Options */}
-      <div className="space-y-3 mb-6">
-        {battleFocusOptions.map((option) => (
-          <button
-            key={option.key}
-            onClick={() => handleSelect(option.key)}
-            className={`w-full p-4 rounded-xl border-2 transition-all hover:scale-[1.02] text-left ${
-              selectedFocus === option.key 
-                ? 'border-primary bg-primary/10' 
-                : 'border-border bg-card hover:border-muted-foreground'
-            }`}
-          >
-            <div className="flex items-center gap-4">
-              <div 
-                className="w-12 h-12 rounded-lg flex items-center justify-center"
-                style={{ backgroundColor: `${option.color}20`, color: option.color }}
-              >
-                {option.icon}
-              </div>
-              <div className="flex-1">
-                <h3 className="font-orbitron font-bold text-base" style={{ color: option.color }}>
-                  {option.label}
-                </h3>
-                <p className="text-sm text-muted-foreground">{option.description}</p>
-              </div>
-              <ChevronRight className="w-5 h-5 text-muted-foreground" />
-            </div>
-          </button>
-        ))}
-      </div>
-
-      {/* Back Button */}
-      <div className="mt-auto">
+    <div className="min-h-screen flex flex-col bg-background kq-no-x kq-screen-in">
+      <div className="sticky top-0 z-20 flex items-center gap-3 px-4 py-3 bg-background/85 backdrop-blur-md border-b border-border kq-safe-top">
         <button
+          type="button"
           onClick={onBack}
-          className="w-full px-4 py-3 rounded-xl font-bold bg-muted text-foreground hover:bg-muted/80 transition-colors"
+          className="kq-tap p-2.5 rounded-xl bg-muted hover:bg-muted/70 transition-colors"
+          aria-label="Back to Monster Select"
+        >
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+        <div className="min-w-0">
+          <h1 className="font-orbitron font-black text-lg text-primary truncate">Choose Battle Focus</h1>
+          <p className="text-xs text-muted-foreground truncate">What will this battle test?</p>
+        </div>
+      </div>
+
+      <div className="flex-1 px-3 pt-4 kq-screen-pad max-w-2xl w-full mx-auto">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+          {battleFocusOptions.map((option, i) => (
+            <button
+              key={option.key}
+              type="button"
+              onClick={() => handleSelect(option.key)}
+              className="kq-tile kq-stagger"
+              data-selected={selectedFocus === option.key ? 'true' : 'false'}
+              style={{ '--kq-tile-color': option.color, '--i': i } as React.CSSProperties}
+            >
+              <span className="kq-tile-icon" aria-hidden="true">{option.icon}</span>
+              <span className="flex-1 min-w-0">
+                <span className="block font-orbitron font-bold text-sm leading-tight" style={{ color: option.color }}>
+                  {option.label}
+                </span>
+                <span className="block text-xs text-muted-foreground">{option.description}</span>
+              </span>
+              <ChevronRight className="w-5 h-5 text-muted-foreground shrink-0" />
+            </button>
+          ))}
+        </div>
+
+        <button
+          type="button"
+          onClick={onBack}
+          className="kq-tap w-full px-4 py-4 rounded-xl font-bold bg-muted text-foreground hover:bg-muted/80 transition-colors"
         >
           Back to Monster Select
         </button>

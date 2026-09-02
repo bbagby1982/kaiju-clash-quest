@@ -31,9 +31,9 @@ export function DailyChallengeCard({ challengeProgress, onRefresh }: DailyChalle
   
   if (!challenge) {
     return (
-      <div className="bg-card/50 border border-border rounded-xl p-4 animate-pulse">
-        <div className="h-6 bg-muted rounded w-1/2 mb-2" />
-        <div className="h-4 bg-muted rounded w-3/4" />
+      <div className="kq-panel p-4">
+        <div className="kq-skel h-6 w-1/2 mb-2" />
+        <div className="kq-skel h-4 w-3/4" />
       </div>
     );
   }
@@ -46,10 +46,10 @@ export function DailyChallengeCard({ challengeProgress, onRefresh }: DailyChalle
   
   return (
     <div className={cn(
-      "relative overflow-hidden rounded-xl border transition-all duration-300",
-      isCompleted 
-        ? "bg-gradient-to-br from-primary/20 to-electric/20 border-primary/50" 
-        : "bg-card/80 border-border hover:border-primary/30"
+      "relative overflow-hidden rounded-2xl border-2 transition-all duration-300",
+      isCompleted
+        ? "bg-gradient-to-br from-primary/25 to-electric/20 border-primary/60 glow-atomic"
+        : "kq-panel border-border hover:border-primary/40"
     )}>
       {/* Completed overlay */}
       {isCompleted && (
@@ -63,7 +63,7 @@ export function DailyChallengeCard({ challengeProgress, onRefresh }: DailyChalle
             <span className="text-2xl">{challenge.icon}</span>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="font-orbitron font-bold text-foreground">
+                <h3 className="font-orbitron font-bold text-foreground leading-tight">
                   {challenge.title}
                 </h3>
                 {isCompleted && (
@@ -126,7 +126,7 @@ export function DailyChallengeCard({ challengeProgress, onRefresh }: DailyChalle
       {/* Completed badge */}
       {isCompleted && (
         <div className="absolute top-2 right-2">
-          <div className="bg-primary text-primary-foreground text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1">
+          <div className="bg-primary text-primary-foreground text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1 kq-pop-in">
             <Trophy className="w-3 h-3" />
             Complete!
           </div>

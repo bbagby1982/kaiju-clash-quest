@@ -29,16 +29,16 @@ export function ChallengeCompletedModal({ challenge, streak, onClose }: Challeng
   const streakMessage = streakMessages.find(s => streak >= s.min) || streakMessages[streakMessages.length - 1];
   
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/85 backdrop-blur-md animate-fade-in overflow-y-auto">
       <div className={cn(
-        "relative bg-card border border-primary/50 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl",
+        "relative kq-panel border-2 border-primary/60 rounded-2xl p-6 max-w-md w-full my-auto shadow-2xl glow-atomic",
         "transform transition-all duration-500",
         showContent ? "scale-100 opacity-100" : "scale-90 opacity-0"
       )}>
         {/* Close button */}
         <button 
           onClick={onClose}
-          className="absolute top-3 right-3 text-muted-foreground hover:text-foreground transition-colors"
+          className="kq-tap absolute top-2 right-2 p-2 rounded-full text-muted-foreground hover:text-foreground transition-colors"
         >
           <X className="w-5 h-5" />
         </button>
@@ -99,7 +99,7 @@ export function ChallengeCompletedModal({ challenge, streak, onClose }: Challeng
         {/* Continue button */}
         <Button 
           onClick={onClose}
-          className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-orbitron"
+          className="kq-tap w-full h-12 bg-primary hover:bg-primary/90 text-primary-foreground font-orbitron font-bold text-base"
         >
           Continue
         </Button>

@@ -9,15 +9,16 @@ interface BattleReadyButtonProps {
 export function BattleReadyButton({ onClick, disabled, label = "Battle Ready" }: BattleReadyButtonProps) {
   return (
     <button
+      type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`battle-ready-btn flex items-center gap-3 ${
-        disabled ? 'opacity-50 cursor-not-allowed' : ''
+      className={`battle-ready-btn kq-tap flex items-center justify-center gap-3 w-full max-w-sm text-xl tracking-widest ${
+        disabled ? 'opacity-50 cursor-not-allowed' : 'animate-pulse-scale'
       }`}
     >
-      <Zap className="w-6 h-6" />
-      <span>{label}</span>
-      <Zap className="w-6 h-6" />
+      <Zap className="w-6 h-6 fill-current shrink-0" />
+      <span className="truncate">{label}</span>
+      <Zap className="w-6 h-6 fill-current shrink-0" />
     </button>
   );
 }

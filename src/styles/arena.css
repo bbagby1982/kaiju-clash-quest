@@ -1,0 +1,330 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   BATTLE ARENA — layout, backdrop scenery and HUD chrome.
+
+   Owned by BattleSimulation.tsx and src/components/game/arena/*.
+   The sprite/FX keyframe LIBRARY lives in src/index.css (search
+   "SPRITE + ARENA ANIMATION LIBRARY") and is NOT duplicated here — this file
+   only positions those effects and adds the scenery motion they don't cover.
+
+   Geometry contract (mirrored by ARENA in BattleFX.tsx):
+     --arena-ground : how far down the screen the ground line sits (62%)
+     player sprite  : 22% from the left,  opponent: 78% (= 22% from the right)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.arena-root {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #04060a;
+  --arena-ground: 62%;
+  --arena-player-x: 22%;
+  --arena-opponent-x: 78%;
+  touch-action: manipulation;
+}
+
+/* Everything that should shake when a titan lands a hit. The HUD is outside it
+   so health bars stay readable during a screen shake. */
+.arena-world { position: absolute; inset: 0; }
+.arena-stage { position: absolute; inset: 0; pointer-events: none; }
+
+/* ── Backdrop ─────────────────────────────────────────────────────────── */
+.arena-backdrop { position: absolute; inset: 0; overflow: hidden; animation: arena-fade-in 0.9s ease-out both; }
+@keyframes arena-fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+.arena-sky { position: absolute; inset: 0; }
+.arena-haze {
+  position: absolute; left: 0; right: 0; bottom: calc(100% - var(--arena-ground));
+  height: 26%; pointer-events: none;
+  background: linear-gradient(to top, var(--arena-haze, rgb(255 255 255 / 0.12)), transparent 85%);
+}
+
+.arena-layer { position: absolute; left: 0; right: 0; overflow: hidden; pointer-events: none; }
+.arena-far { bottom: calc(100% - var(--arena-ground)); height: 34%; opacity: 0.85; }
+.arena-mid { bottom: calc(100% - var(--arena-ground) - 2%); height: 22%; }
+
+/* Two identical copies scrolling as one strip = seamless parallax drift. */
+.arena-scroll { position: absolute; inset: 0; display: flex; width: 200%; }
+.arena-scroll > * { flex: 0 0 50%; width: 50%; height: 100%; }
+.arena-scroll--slow { animation: arena-scroll-x 90s linear infinite; }
+.arena-scroll--mid  { animation: arena-scroll-x 52s linear infinite; }
+@keyframes arena-scroll-x { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+
+.arena-ground {
+  position: absolute; left: 0; right: 0; top: var(--arena-ground); bottom: 0;
+  background:
+    linear-gradient(to bottom, var(--arena-ground-near, #1b1f27) 0%, var(--arena-ground-far, #0a0c11) 100%);
+}
+.arena-ground::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 0; height: 3px;
+  background: linear-gradient(90deg, transparent, var(--arena-rim, rgb(255 255 255 / 0.35)), transparent);
+  filter: blur(0.5px);
+}
+/* Receding perspective lines so the ground reads as a plane, not a stripe. */
+.arena-ground::after {
+  content: ''; position: absolute; inset: 0; opacity: 0.35;
+  background: repeating-linear-gradient(to bottom, rgb(255 255 255 / 0.05) 0 1px, transparent 1px 14px);
+  mask-image: linear-gradient(to bottom, transparent, #000 40%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 40%);
+}
+
+.arena-vignette {
+  position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse 90% 70% at 50% 45%, transparent 40%, rgb(0 0 0 / 0.75) 100%);
+}
+
+/* ── Ambient particles ────────────────────────────────────────────────── */
+.arena-particles { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.arena-particle { position: absolute; border-radius: 50%; will-change: transform, opacity; }
+
+.arena-p-twinkle { animation: arena-twinkle var(--dur, 3.5s) ease-in-out infinite; animation-delay: var(--delay, 0s); }
+@keyframes arena-twinkle { 0%, 100% { opacity: 0.12; } 50% { opacity: var(--peak, 1); } }
+
+.arena-p-rise { animation: arena-rise var(--dur, 7s) linear infinite; animation-delay: var(--delay, 0s); }
+@keyframes arena-rise {
+  0%   { transform: translate3d(0, 0, 0) scale(0.7); opacity: 0; }
+  12%  { opacity: var(--peak, 0.9); }
+  100% { transform: translate3d(var(--sway, 14px), var(--lift, -70vh), 0) scale(1.1); opacity: 0; }
+}
+
+.arena-p-fall { animation: arena-fall var(--dur, 9s) linear infinite; animation-delay: var(--delay, 0s); }
+@keyframes arena-fall {
+  0%   { transform: translate3d(0, -10vh, 0) rotate(0deg); opacity: 0; }
+  10%  { opacity: var(--peak, 0.8); }
+  100% { transform: translate3d(var(--sway, 40px), 60vh, 0) rotate(320deg); opacity: 0; }
+}
+
+.arena-p-float { animation: arena-float var(--dur, 6s) ease-in-out infinite alternate; animation-delay: var(--delay, 0s); }
+@keyframes arena-float {
+  from { transform: translate3d(0, 0, 0); opacity: 0.25; }
+  to   { transform: translate3d(var(--sway, 22px), var(--lift, -26px), 0); opacity: var(--peak, 1); }
+}
+
+.arena-searchlight {
+  position: absolute; bottom: calc(100% - var(--arena-ground) - 2%); width: 9%; height: 56%;
+  transform-origin: 50% 100%; pointer-events: none; filter: blur(7px); mix-blend-mode: screen;
+  background: linear-gradient(to top, var(--sl-color, hsl(50 100% 75% / 0.35)), transparent 80%);
+  animation: arena-sweep var(--dur, 11s) ease-in-out infinite alternate; animation-delay: var(--delay, 0s);
+}
+@keyframes arena-sweep { from { transform: rotate(-26deg); } to { transform: rotate(24deg); } }
+
+.arena-lightning {
+  position: absolute; inset: 0; pointer-events: none; opacity: 0; mix-blend-mode: screen;
+  background: linear-gradient(180deg, hsl(210 100% 92% / 0.9), transparent 60%);
+  animation: arena-lightning 13s linear infinite;
+}
+@keyframes arena-lightning {
+  0%, 84%, 100% { opacity: 0; }
+  85%   { opacity: 0.55; }
+  86.5% { opacity: 0; }
+  88%   { opacity: 0.32; }
+  89.5% { opacity: 0; }
+}
+
+.arena-lavaglow {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 52%; pointer-events: none; mix-blend-mode: screen;
+  background: radial-gradient(ellipse 70% 60% at 50% 100%, hsl(22 100% 55% / 0.6), transparent 72%);
+  animation: arena-pulse 4.6s ease-in-out infinite;
+}
+@keyframes arena-pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+
+.arena-caustics {
+  position: absolute; left: 0; right: 0; top: 0; bottom: 0; pointer-events: none; opacity: 0.22; mix-blend-mode: screen;
+  background: repeating-linear-gradient(103deg, transparent 0 26px, hsl(190 100% 80% / 0.5) 26px 30px, transparent 30px 56px);
+  animation: arena-caustics 9s linear infinite;
+}
+@keyframes arena-caustics { from { transform: translateX(0); } to { transform: translateX(-56px); } }
+
+/* ── Fighters ─────────────────────────────────────────────────────────── */
+.arena-fighter {
+  position: absolute;
+  bottom: calc(100% - var(--arena-ground));
+  transform: translateX(-50%) scale(var(--fighter-scale, 0.9));
+  transform-origin: 50% 100%;
+  pointer-events: none;
+}
+.arena-fighter--player   { left: var(--arena-player-x); }
+.arena-fighter--opponent { left: var(--arena-opponent-x); }
+@media (min-width: 480px) { .arena-fighter { --fighter-scale: 1; } }
+
+/* ── FX positioning (the keyframes themselves live in index.css) ──────── */
+.arena-fx { position: absolute; inset: 0; pointer-events: none; z-index: 20; overflow: hidden; }
+
+/* Compound selectors so these win over the single-class library defaults. */
+.fx-beam.arena-beam { border-radius: 999px; }
+.fx-beam.arena-beam--rtl { transform-origin: 100% 50%; }
+
+.fx-impact.arena-impact {
+  width: var(--fx-size, 150px); height: var(--fx-size, 150px); aspect-ratio: auto;
+  margin-left: calc(var(--fx-size, 150px) / -2); margin-top: calc(var(--fx-size, 150px) / -2);
+}
+.fx-projectile.arena-projectile {
+  width: var(--fx-size, 46px); height: var(--fx-size, 46px); aspect-ratio: auto;
+  margin-left: calc(var(--fx-size, 46px) / -2); margin-top: calc(var(--fx-size, 46px) / -2);
+}
+.fx-shockwave.arena-shockwave { width: var(--fx-size, 120px); height: var(--fx-size, 120px); aspect-ratio: auto; }
+.fx-damage.arena-damage { position: relative; }
+.arena-damage-anchor { position: absolute; transform: translateX(-50%); pointer-events: none; }
+
+/* ── HUD ──────────────────────────────────────────────────────────────── */
+.arena-hud {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 30;
+  padding: calc(8px + env(safe-area-inset-top)) 10px 0;
+}
+.arena-bottom {
+  position: absolute; bottom: 0; left: 0; right: 0; z-index: 30;
+  padding: 0 10px calc(10px + env(safe-area-inset-bottom));
+}
+
+.arena-panel {
+  background: linear-gradient(180deg, rgb(8 12 18 / 0.86), rgb(4 6 10 / 0.92));
+  border: 1px solid rgb(255 255 255 / 0.14);
+  border-radius: 14px;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.arena-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 999px; font-size: 10px; line-height: 1.6;
+  font-family: Orbitron, system-ui, sans-serif; font-weight: 700; letter-spacing: 0.06em;
+  background: rgb(0 0 0 / 0.55); border: 1px solid currentColor;
+  white-space: nowrap;
+}
+
+/* HP bars */
+.arena-hp { min-width: 0; }
+.arena-hp-name {
+  font-family: Orbitron, system-ui, sans-serif; font-weight: 800; font-size: 11px; letter-spacing: 0.04em;
+  text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.arena-hp--low .arena-hp-name { animation: arena-lowhp 0.9s ease-in-out infinite; }
+@keyframes arena-lowhp { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+/* On a narrow phone the fighter's NAME wins the space fight — the rarity chip
+   is decoration and only appears once there is room for it. */
+.arena-hp-chip { display: none; }
+@media (min-width: 480px) { .arena-hp-chip { display: inline-flex; } }
+.arena-hp .hp-bar { height: 11px; }
+@media (min-width: 480px) { .arena-hp .hp-bar { height: 14px; } }
+
+/* ── Caption bar (comic panel) ────────────────────────────────────────── */
+.arena-caption {
+  position: relative; width: 100%; text-align: left;
+  background: linear-gradient(180deg, rgb(10 14 20 / 0.94), rgb(3 5 9 / 0.96));
+  border: 2px solid var(--caption-accent, hsl(120 100% 45%));
+  border-radius: 14px;
+  box-shadow: 0 0 22px rgb(0 0 0 / 0.7), 0 0 18px var(--caption-glow, hsl(120 100% 45% / 0.25));
+  padding: 10px 12px;
+  animation: arena-caption-in 0.35s cubic-bezier(.2, .9, .3, 1.2) both;
+}
+@keyframes arena-caption-in {
+  from { transform: translateY(10px) scale(0.98); opacity: 0; }
+  to   { transform: translateY(0) scale(1); opacity: 1; }
+}
+.arena-caption::after {
+  content: ''; position: absolute; left: 26px; top: -9px; width: 16px; height: 16px;
+  background: inherit; border-left: 2px solid var(--caption-accent, hsl(120 100% 45%));
+  border-top: 2px solid var(--caption-accent, hsl(120 100% 45%));
+  transform: rotate(45deg); border-radius: 3px 0 0 0;
+}
+.arena-caption-text {
+  font-family: Rajdhani, system-ui, sans-serif; font-weight: 600; font-size: 14px; line-height: 1.35;
+  color: hsl(180 100% 95%); text-shadow: 0 1px 0 rgb(0 0 0 / 0.8);
+}
+@media (min-width: 480px) { .arena-caption-text { font-size: 16px; } }
+.arena-caption-skip {
+  font-family: Orbitron, system-ui, sans-serif; font-size: 9px; font-weight: 700; letter-spacing: 0.14em;
+  color: hsl(50 100% 60%); opacity: 0.9; animation: arena-blink 1.3s ease-in-out infinite;
+}
+@keyframes arena-blink { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+.arena-caption-ai {
+  font-family: Orbitron, system-ui, sans-serif; font-size: 9px; letter-spacing: 0.1em;
+  color: hsl(210 100% 70%); opacity: 0.75;
+}
+
+/* ── Command menu ─────────────────────────────────────────────────────── */
+.arena-menu { animation: arena-menu-in 0.3s cubic-bezier(.2, .9, .3, 1.2) both; }
+@keyframes arena-menu-in { from { transform: translateY(18px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+.arena-cmd {
+  position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+  padding: 9px 10px; border-radius: 13px; text-align: left; overflow: hidden;
+  border: 2px solid var(--cmd-color, hsl(120 100% 45%));
+  background: linear-gradient(180deg, rgb(12 16 24 / 0.94), rgb(4 6 10 / 0.94));
+  box-shadow: 0 3px 0 rgb(0 0 0 / 0.6), inset 0 1px 0 rgb(255 255 255 / 0.08);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+  min-height: 58px;
+}
+.arena-cmd:active { transform: translateY(3px); box-shadow: 0 0 0 rgb(0 0 0 / 0.6); }
+@media (hover: hover) {
+  .arena-cmd:hover { background: linear-gradient(180deg, rgb(20 27 38 / 0.96), rgb(8 11 17 / 0.96)); box-shadow: 0 3px 0 rgb(0 0 0 / 0.6), 0 0 18px var(--cmd-glow, transparent); }
+}
+.arena-cmd-head {
+  display: flex; align-items: center; gap: 6px;
+  font-family: Orbitron, system-ui, sans-serif; font-weight: 900; font-size: 12px; letter-spacing: 0.08em;
+  color: var(--cmd-color, hsl(120 100% 45%)); text-transform: uppercase;
+}
+.arena-cmd-icon { font-size: 16px; line-height: 1; }
+.arena-cmd-desc {
+  font-family: Rajdhani, system-ui, sans-serif; font-size: 11px; line-height: 1.2;
+  color: hsl(220 15% 72%);
+}
+@media (min-width: 480px) {
+  .arena-cmd { min-height: 66px; padding: 11px 12px; }
+  .arena-cmd-head { font-size: 13px; }
+  .arena-cmd-desc { font-size: 12px; }
+}
+
+/* ── VS splash ────────────────────────────────────────────────────────── */
+.arena-vs { position: absolute; inset: 0; z-index: 40; pointer-events: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
+.arena-vs-plate {
+  max-width: 88vw; padding: 6px 16px; border-radius: 10px;
+  background: linear-gradient(90deg, rgb(0 0 0 / 0.85), rgb(0 0 0 / 0.55));
+  border-left: 4px solid var(--plate-color, hsl(120 100% 45%));
+  text-shadow: 0 2px 0 rgb(0 0 0 / 0.8);
+}
+.arena-vs-plate--left  { animation: arena-plate-l 0.55s cubic-bezier(.2, .9, .3, 1.2) both; }
+.arena-vs-plate--right { animation: arena-plate-r 0.55s cubic-bezier(.2, .9, .3, 1.2) 0.12s both; align-self: center; }
+@keyframes arena-plate-l { from { transform: translateX(-60vw); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes arena-plate-r { from { transform: translateX(60vw); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+.arena-vs-name { font-family: Orbitron, system-ui, sans-serif; font-weight: 900; font-size: clamp(18px, 6vw, 34px); line-height: 1.1; }
+.arena-vs-title { font-family: Rajdhani, system-ui, sans-serif; font-size: clamp(11px, 3.2vw, 15px); color: hsl(220 15% 78%); }
+.arena-vs-mark {
+  font-family: Orbitron, system-ui, sans-serif; font-weight: 900; font-size: clamp(44px, 16vw, 110px); line-height: 1;
+  color: hsl(50 100% 55%); -webkit-text-stroke: 2px rgb(0 0 0 / 0.6);
+  text-shadow: 0 0 30px hsl(50 100% 50% / 0.8), 0 6px 0 rgb(0 0 0 / 0.5);
+  animation: arena-vs-mark 0.7s cubic-bezier(.2, .9, .3, 1.4) both;
+}
+@keyframes arena-vs-mark {
+  0%   { transform: scale(4) rotate(-16deg); opacity: 0; }
+  55%  { transform: scale(0.92) rotate(-6deg); opacity: 1; }
+  100% { transform: scale(1) rotate(-6deg); opacity: 1; }
+}
+
+/* ── Results panel ────────────────────────────────────────────────────── */
+.arena-results {
+  position: absolute; inset: 0; z-index: 50; display: flex; align-items: flex-end; justify-content: center;
+  background: linear-gradient(to top, rgb(2 3 6 / 0.96) 45%, rgb(2 3 6 / 0.55));
+  animation: arena-fade-in 0.35s ease-out both;
+}
+.arena-results-sheet {
+  width: 100%; max-width: 560px; max-height: 94%; overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 16px 14px calc(20px + env(safe-area-inset-bottom));
+  border-top-left-radius: 20px; border-top-right-radius: 20px;
+  border: 1px solid rgb(255 255 255 / 0.14); border-bottom: none;
+  background: linear-gradient(180deg, hsl(220 25% 9% / 0.98), hsl(220 20% 4% / 0.99));
+  box-shadow: 0 -18px 60px rgb(0 0 0 / 0.8);
+  animation: arena-sheet-up 0.55s cubic-bezier(.2, .9, .3, 1.05) both;
+}
+@keyframes arena-sheet-up { from { transform: translateY(70%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+/* ── Reduced motion: keep the game readable, drop the movement ─────────── */
+@media (prefers-reduced-motion: reduce) {
+  .arena-backdrop, .arena-scroll--slow, .arena-scroll--mid, .arena-p-twinkle, .arena-p-rise,
+  .arena-p-fall, .arena-p-float, .arena-searchlight, .arena-lightning, .arena-lavaglow,
+  .arena-caustics, .arena-caption, .arena-menu, .arena-vs-plate--left, .arena-vs-plate--right,
+  .arena-vs-mark, .arena-results, .arena-results-sheet, .arena-caption-skip, .arena-hp--low .arena-hp-name {
+    animation-duration: 0.01s !important;
+    animation-iteration-count: 1 !important;
+  }
+}
