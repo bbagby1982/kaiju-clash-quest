@@ -11,7 +11,7 @@ await build({
   entryPoints: [path.join(root, 'src/lib/battleEngine.ts'), path.join(root, 'src/data/monsters.ts'), path.join(root, 'src/data/maps.ts')],
   bundle: true, format: 'esm', platform: 'node', outdir: path.dirname(out), outbase: path.join(root, 'src'),
   alias: { '@': path.join(root, 'src') },
-  loader: { '.png': 'dataurl' },
+  loader: { '.png': 'dataurl', '.webp': 'dataurl' },
   logLevel: 'silent',
 });
 const engine = await import(path.join(path.dirname(out), 'lib/battleEngine.js'));

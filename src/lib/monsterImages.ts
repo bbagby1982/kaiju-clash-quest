@@ -16,6 +16,10 @@ import infernox from '@/assets/monsters/infernox.png';
 import glacius from '@/assets/monsters/glacius.png';
 import voltara from '@/assets/monsters/voltara.png';
 import cyclonix from '@/assets/monsters/cyclonix.png';
+// Generated in Canva on 2026-09-02 and bundled because the admin upload was blocked
+// (ADMIN_KEY missing at runtime); a cloud upload of the same id overrides it.
+import chimeraBeast from '@/assets/monsters/chimera-beast.webp';
+import minotaurPrime from '@/assets/monsters/minotaur-prime.webp';
 
 // Map all monster IDs to their image imports
 const monsterImages: Record<string, string> = {
@@ -34,6 +38,8 @@ const monsterImages: Record<string, string> = {
   'glacius': glacius,
   'voltara': voltara,
   'cyclonix': cyclonix,
+  'chimera-beast': chimeraBeast,
+  'minotaur-prime': minotaurPrime,
 };
 
 // Category-based emoji fallbacks for monsters without images

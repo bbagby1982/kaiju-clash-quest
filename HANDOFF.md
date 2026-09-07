@@ -1,8 +1,14 @@
 # HANDOFF — Kaiju Clash Quest redesign (branch `claude/game-animation-monster-redesign-6rdkcp`)
 
-Read this first when picking the game up. Session of 2026-09-02; everything below is
-committed and pushed. The branch is NOT merged to `main` — merging is what deploys it to
-https://godzzillagame.netlify.app/ (the link in Family-HQ's Godzilla tab).
+Read this first when picking the game up. Session of 2026-09-02. The owner merged the
+branch to `main` the same day, so the redesign is LIVE at https://godzzillagame.netlify.app/
+(the link in Family-HQ's Godzilla tab) and `ELEVENLABS_KEY` is set there. Commits after
+the merge (this file, the bundled Chimera Beast art) sit on the branch, rebased on main.
+
+**Netlify env trap:** the Netlify MCP connector's env-var upsert silently drops a variable
+created with context "all"; with context "production" it works. `ADMIN_KEY` is set
+(production, 2026-09-07) and reaches the functions from the first deploy after that.
+Always verify with a fresh listing after any upsert.
 
 ## State of the branch
 - `npm run typecheck` clean · `npm run lint` 0 errors · `npm test` 4,012 engine + 45 function
@@ -26,9 +32,12 @@ https://godzzillagame.netlify.app/ (the link in Family-HQ's Godzilla tab).
 
 ## Art
 82 of 84 non-bundled monsters have Canva-generated art in the blob store (see
-`/api/roster`). Missing after three Canva quota walls (the account allows only a couple
-of generations per window): `chimera-beast`, `minotaur-prime` — one more retry is
-scheduled; otherwise generate them in `/admin` (Canva link or file drop).
+`/api/roster`), and `chimera-beast` is BUNDLED (`src/assets/monsters/chimera-beast.webp`)
+because its upload hit the ADMIN_KEY trap above. The one still missing after four Canva quota walls (the account allows
+only a couple of generations per window) is `minotaur-prime` — the owner generates it
+in Canva ("towering bull-headed minotaur kaiju, bronze horns, stone maze-wall armour,
+holding a tiny map upside down") and drops it in through `/admin` (Canva link or file).
+No further automatic retries are scheduled.
 Lesson: Canva's generator sometimes returns a TEXT POSTER TEMPLATE or adds
 watermarks — every image must be looked at before upload (about 1 in 5 first drafts
 were rejected). Legacy PNGs (showa, infernox, glacius, sockzilla, mechazord,
