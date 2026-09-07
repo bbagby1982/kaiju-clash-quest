@@ -5,6 +5,9 @@ branch to `main` the same day, so the redesign is LIVE at https://godzzillagame.
 (the link in Family-HQ's Godzilla tab) and `ELEVENLABS_KEY` is set there. Commits after
 the merge (this file, the bundled Chimera Beast art) sit on the branch, rebased on main.
 
+**Post-launch checks (2026-09-07):** `/api/voice` returns real audio in the owner's
+Godzilla voice; `/admin` writes work with `ADMIN_KEY`; `/api/roster` lists 91 art entries.
+
 **Netlify env trap:** the Netlify MCP connector's env-var upsert silently drops a variable
 created with context "all"; with context "production" it works. `ADMIN_KEY` is set
 (production, 2026-09-07) and reaches the functions from the first deploy after that.
@@ -40,8 +43,8 @@ holding a tiny map upside down") and drops it in through `/admin` (Canva link or
 No further automatic retries are scheduled.
 Lesson: Canva's generator sometimes returns a TEXT POSTER TEMPLATE or adds
 watermarks — every image must be looked at before upload (about 1 in 5 first drafts
-were rejected). Legacy PNGs (showa, infernox, glacius, sockzilla, mechazord,
-king-ghidorah) are 3–6 MB: press "Re-optimize" in `/admin` after deploy.
+were rejected). All 91 cloud images were re-encoded on 2026-09-07 as 1024px WebP
+(50 MB of PNG → 3.9 MB total); `/api/monster-image/*` now serves `image/webp`.
 
 ## Not verified on real hardware
 iOS audio unlock and actual ElevenLabs playback (no key in the sandbox), the Canva-link
