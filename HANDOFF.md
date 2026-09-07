@@ -5,13 +5,10 @@ branch to `main` the same day, so the redesign is LIVE at https://godzzillagame.
 (the link in Family-HQ's Godzilla tab) and `ELEVENLABS_KEY` is set there. Commits after
 the merge (this file, the bundled Chimera Beast art) sit on the branch, rebased on main.
 
-**Netlify env trap:** the Netlify MCP connector's env-var upsert answers "upserted" but the
-variable NEVER appears on the site (checked twice for `ADMIN_KEY`; only the owner's
-`ELEVENLABS_KEY` is listed). So `ADMIN_KEY` is NOT set: `/admin` writes return
-"ADMIN_KEY is not configured" until the owner adds it in the Netlify UI (Site
-configuration → Environment variables, scope Functions) — any value she likes — and
-triggers a deploy (env vars reach functions on the next deploy). Do not trust the
-connector for env vars; verify with a fresh listing.
+**Netlify env trap:** the Netlify MCP connector's env-var upsert silently drops a variable
+created with context "all"; with context "production" it works. `ADMIN_KEY` is set
+(production, 2026-09-07) and reaches the functions from the first deploy after that.
+Always verify with a fresh listing after any upsert.
 
 ## State of the branch
 - `npm run typecheck` clean · `npm run lint` 0 errors · `npm test` 4,012 engine + 45 function
