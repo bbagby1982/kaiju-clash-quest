@@ -50,3 +50,73 @@ were rejected). All 91 cloud images were re-encoded on 2026-09-07 as 1024px WebP
 iOS audio unlock and actual ElevenLabs playback (no key in the sandbox), the Canva-link
 CORS path and WebP/PNG fallback on older Safari in `/admin`, and the feel of the
 animations on an actual iPad. Everything else was exercised headless.
+
+---
+
+## 2026-10-12 — two bugs the owner reported, both fixed
+
+### 1. "the voice over keeps getting cut off before it moves to the next page after the battle"
+
+The finale fired the announcer's stamp and the winner's line as
+**fire-and-forget** (`void (async () => { await speak(…); await speak(…) })()`)
+and then ran a fixed **1300 ms** step before swapping in the results sheet.
+Two real ElevenLabs clips run 4–8 s, so the sheet always landed mid-sentence —
+and tapping Continue there unmounts the arena, whose cleanup aborts the audio
+outright.
+
+The finale now **keeps** that promise and waits on it before showing the
+results. The race lives in `waitForLine()` in `src/lib/voice.ts` so it can be
+executed by a test without a browser. Three ways out, whichever lands first:
+
+1. the line ends — the normal case;
+2. `FINALE_VOICE_MAX_MS` (10 s) elapses — voice must **never** block gameplay,
+   so a slow or dead ElevenLabs costs a few seconds of quiet, never a child
+   stranded in a fight that is already over;
+3. the kid taps the caption bar.
+
+That third one matters more than it looks: by then the beat sequence has
+finished, so `skip()`'s `if (!seq.current) return` would have made
+"TAP TO SKIP" a **dead control**. `skip()` now releases the hold first.
+
+Measured end to end (`npm run test:finale`, two 2 s clips):
+**4571 ms held with voice, 2791 ms silent.** With the old fire-and-forget the
+sheet appeared before the finale stamp could even be observed.
+
+### 2. "there is not back button when you are on the monster encyclopedia page"
+
+Not an encyclopedia bug — a **game-wide** one that only hurt there.
+`.kq-no-x { overflow-x: hidden }` sat on the `GameLayout` root, and
+`overflow-x: hidden` makes an element a scroll container, which becomes the
+containing block for every `position: sticky` descendant. So the sticky header
+and the sticky bottom nav had nothing to stick inside.
+
+Measured at 390×844 before the fix — the Encyclopedia document is **11,854 px**
+tall:
+
+| scroll | header | bottom nav |
+|---|---|---|
+| top | −771 (off) | 11022 (off) |
+| 600 | −600 (off) | 11193 (off) |
+| the very end | off | on |
+
+So a child had **no header and no nav on screen** anywhere except the very
+bottom: ~11,000 px of scrolling to reach any way out. After: header pinned at
+`0..53` and nav at `782..844` at every scroll position.
+
+The fix is to drop `kq-no-x` from that one root. `<main>` keeps its own, so
+wide content is still clipped where it matters. Deliberately **not**
+`overflow-x: clip`, which also works but needs Safari 16.4+ and would quietly
+put the bug back on an older iPad with every test still green.
+
+### Tests added
+- `tests/voiceWait.test.mjs` — 17 checks, executes the real `waitForLine`.
+- `tests/arenaWiring.test.mjs` — 16 checks, comment-stripped scan of the
+  wiring either side of it, plus the layout root.
+- `tests/e2e/finale-voice.mjs` — drives a real battle twice (voice working /
+  voice dead) and times the results sheet. `npm run test:finale`.
+
+Six mutations verified to turn them red, including reverting the finale to
+fire-and-forget and putting `kq-no-x` back.
+
+**Not verified on real hardware** — all measurements are headless Chromium at
+390×844 with `env(safe-area-inset-*)` at 0.

@@ -196,3 +196,47 @@ export function useVoice() {
   const toggle = useCallback(() => setVoiceMuted(!muted), []);
   return { muted, available, toggle, speak, roar, preloadSpeech, preloadRoar, stop: stopSpeaking };
 }
+
+/**
+ * waitForLine — let a spoken line finish, but never let it hold a screen
+ * hostage.
+ *
+ * Owner, 2026-10-12: "in the godzilla game the voice over keeps getting cut
+ * off before it moves to the next page after the battle." The arena used to
+ * fire the announcer + the winner's line as fire-and-forget and swap in the
+ * results sheet on a fixed 1300ms timer; two real ElevenLabs clips run 4-8s,
+ * so the sheet always landed mid-sentence.
+ *
+ * Resolves on whichever comes FIRST:
+ *   1. `line` settles — the normal case, the kid hears the whole thing;
+ *   2. `capMs` elapses — a slow or dead ElevenLabs must cost a few seconds of
+ *      quiet, never a child stranded in a fight that is already over. This
+ *      module's first rule is that voice never blocks gameplay;
+ *   3. someone calls the releaser handed to `onRelease` — the kid tapped
+ *      "skip", which cuts the line on purpose.
+ *
+ * Never rejects: a line that throws is treated as a line that finished, for
+ * the same reason speak() never rejects. `onRelease(null)` is always called on
+ * the way out so a caller can drop its reference and leave no live control
+ * pointing at a finished wait.
+ */
+export function waitForLine(
+  line: Promise<unknown> | null | undefined,
+  capMs: number,
+  onRelease?: (release: (() => void) | null) => void,
+): Promise<'ended' | 'capped' | 'released' | 'none'> {
+  if (!line) { onRelease?.(null); return Promise.resolve('none'); }
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (how: 'ended' | 'capped' | 'released') => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(cap);
+      onRelease?.(null);
+      resolve(how);
+    };
+    const cap = setTimeout(() => done('capped'), Math.max(0, capMs));
+    onRelease?.(() => { stopSpeaking(); done('released'); });
+    void Promise.resolve(line).then(() => done('ended'), () => done('ended'));
+  });
+}

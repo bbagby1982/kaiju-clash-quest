@@ -24,7 +24,20 @@ export function GameLayout({ children, activeTab, onTabChange }: GameLayoutProps
   const isHome = activeTab === 'home';
 
   return (
-    <div className="min-h-screen flex flex-col bg-background kq-no-x">
+    // NO `kq-no-x` ON THIS ROOT. It sets `overflow-x: hidden`, which makes the
+    // element a SCROLL CONTAINER — and a scroll container becomes the
+    // containing block for every `position: sticky` descendant. With it on,
+    // the sticky header and the sticky bottom nav below had nothing to stick
+    // inside and simply sat at the top and bottom of an 11,854px document:
+    // measured on a 390x844 phone, the Encyclopedia showed NEITHER of them at
+    // any scroll position except the very end, so a child was 11,000px of
+    // scrolling away from any way out (owner, 2026-10-12: "there is not back
+    // button when you are on the monster encyclopedia page").
+    // <main> below keeps its own kq-no-x, so wide content is still clipped
+    // where it actually matters. Deliberately NOT `overflow-x: clip` here,
+    // which would work but needs Safari 16.4+ and would quietly put the bug
+    // back on an older iPad with every test still green.
+    <div className="min-h-screen flex flex-col bg-background">
       {/* Header — slim: mark, wordmark, byline (collapsed to just the mark on Home) */}
       <header className="sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur-md kq-safe-top">
         <div className="flex items-center gap-2.5 px-4 py-2">
