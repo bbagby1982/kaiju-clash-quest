@@ -122,17 +122,87 @@ ok(/\(release\) => \{ releaseFinale\.current = release; \}/.test(ARENA),
 // structural check holds this.
 ok(/const finaleAbort = useRef<AbortController \| null>\(null\);/.test(ARENA),
   'the finale has its OWN abort controller, separate from the arena-lifetime one');
-ok((skipBody.match(/finaleAbort\.current\?\.abort\(\)/g) || []).length === 2,
+ok((skipBody.match(/finaleAbort\.current\?\.abort\(\)/g) || []).length >= 2,
   'and skip() aborts it on BOTH exits — the released-hold one and the mid-finale one');
 ok(/finaleAbort\.current = new AbortController\(\);/.test(ARENA),
   'a fresh one per finale, so battle 2 is not born aborted');
 const finaleBody = ARENA.slice(ARENA.indexOf('const startFinale = useCallback'), ARENA.indexOf('const beginRound = useCallback'));
 ok(finaleBody.length > 500 && !/signal: vsignal\(\)/.test(finaleBody),
   `the finale's speech uses the finale's signal, not the arena's (${finaleBody.length} chars)`);
-ok((finaleBody.match(/signal: fsignal\(\)/g) || []).length === 3,
+// LOWER BOUNDS, not exact counts. § 2 was rewritten because its old regex
+// went red on a correct change; pinning `=== 2` and `=== 3` would do the same
+// thing to a fourth finale line or a third legitimate abort. The absence
+// check below is what actually forbids the arena-lifetime signal here.
+ok((finaleBody.match(/signal: fsignal\(\)/g) || []).length >= 3,
   'all three of its lines — stamp, win, lose — go through it');
 ok(!/preloadSpeech\(stampText/.test(ARENA),
   'and the stamp is not prefetched 300ms before it is spoken, which just fetched it twice and leaked a blob URL');
+// ── AND ON UNMOUNT ──────────────────────────────────────────────────────
+// The third audit found this advertised in the commit message, the PR body
+// and HANDOFF, and pinned by NOTHING: deleting the line kept all 4,127 unit
+// checks and typecheck green, and the e2e cannot see it because it never taps
+// Continue (playOneBattle breaks the moment the button is visible), so the
+// arena is never unmounted in any test.
+// The harm is concrete: ElevenLabs slower than the 10s cap — not rare on a
+// phone — means the sheet appears while the stamp is still being fetched.
+// Alfred taps Continue, the arena unmounts, the fetch lands, and because
+// unmount is the ONE abort path that does not set `finaleCut`, nothing stops
+// it: the clip plays over the main menu with no arena left to silence it.
+{
+  const i = ARENA.indexOf('voiceAbort.current = new AbortController();');
+  const cleanup = ARENA.slice(i, ARENA.indexOf('}, []);', i));
+  ok(i > 0 && cleanup.length > 100 && cleanup.length < 1500,
+    `the mount effect's cleanup was isolated (${cleanup.length} chars)`);
+  ok(/return \(\) => \{/.test(cleanup) && /finaleAbort\.current\?\.abort\(\)/.test(cleanup),
+    'unmounting the arena aborts the finale\'s in-flight fetch too, so a clip cannot land over the main menu');
+}
+
+console.log('\n== 2b. ...and no CSS rule can re-break it behind the guard\'s back ==');
+// THE BEST MUTATION OF THIS PR'S REVIEW, and § 3's guard could not see it.
+// That guard matches JSX className STRINGS. Three lines of CSS —
+//   .kq-screen-in { overflow-x: hidden; }
+// — put the owner's bug back in full while every check, typecheck, lint,
+// build and the whole finale e2e stayed green: measured at 390x844 on
+// BattleSetup step 1, the root's computed overflow became hidden/auto, the
+// sticky header sat at -600 and the Back button (the ONLY way out of that
+// screen — these views render outside GameLayout, so there is no bottom nav)
+// was off screen at every scroll position. Alfred passes BattleSetup on every
+// single battle.
+// It is not contrived bait either: HANDOFF.md records "1px of sideways scroll
+// at 320x568 on BattleFocusSelection's advice view" as open, and the obvious
+// fix for "the animating screen scrolls sideways" is to clip overflow on the
+// animating screen's own class. The open item invites exactly this edit.
+// So: collect every class on a min-h-screen root, then refuse an overflow
+// declaration on any of them in the stylesheet. tests/e2e/sticky-escape.mjs
+// measures the real rendered positions; this is the cheap half that runs in
+// `npm test`.
+{
+  const SCREENS = ['GameLayout', 'BattleSetup', 'BattlePreview', 'BattleFocusSelection'];
+  const rootClasses = new Set();
+  for (const name of SCREENS) {
+    const src = stripComments(read(`src/components/game/${name}.tsx`));
+    for (const m of src.matchAll(/className="(min-h-screen[^"]*)"/g))
+      for (const c of m[1].split(/\s+/)) if (c && !/^(min-h-screen|flex|flex-col)$/.test(c)) rootClasses.add(c);
+  }
+  ok(rootClasses.size > 0, `found the classes those roots carry: ${[...rootClasses].join(' ')}`);
+  // Every rule in home.css whose selector names one of them, and declares overflow.
+  const offenders = [];
+  for (const m of CSS.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+    const sel = m[1], body = m[2];
+    if (!/overflow[-a-z]*\s*:/.test(body)) continue;
+    for (const c of rootClasses) if (new RegExp('\\.' + c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b').test(sel))
+      offenders.push(sel.trim() + ' { ' + body.trim().slice(0, 60) + ' }');
+  }
+  ok(offenders.length === 0,
+    'and NO stylesheet rule puts overflow on a class those roots carry — that makes the root a scroll container and un-sticks the only way out: ' + JSON.stringify(offenders));
+  // Anti-rot: the scan must actually fire on the mutation it exists to catch.
+  const fakeCss = '.kq-screen-in {\n  animation: kq-screen-in 0.35s both;\n  overflow-x: hidden;\n}';
+  let caught = 0;
+  for (const m of fakeCss.matchAll(/([^{}]+)\{([^}]*)\}/g))
+    if (/overflow[-a-z]*\s*:/.test(m[2]) && /\.kq-screen-in\b/.test(m[1])) caught++;
+  ok(caught === 1 && rootClasses.has('kq-screen-in'),
+    'and that scan catches `.kq-screen-in { overflow-x: hidden }`, the mutation that left everything else green');
+}
 
 console.log('\n== 3. The header and the bottom nav can actually stick ==');
 // Owner: "there is not back button when you are on the monster encyclopedia

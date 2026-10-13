@@ -124,6 +124,15 @@ function playOn(el: HTMLAudioElement | null, url: string, signal?: AbortSignal):
     if (el === speechEl) playing.add(finish);
     el.addEventListener('ended', finish);
     el.addEventListener('error', finish);
+    // An ALREADY-aborted signal never fires `abort`, so a clip started with one
+    // would be unstoppable. Not reachable through speak()/roar() today — both
+    // pre-check `signal?.aborted` with no await before play() — but after the
+    // finale's own controller landed that pre-check is the only guard, and the
+    // case it has to cover is the CACHED path (Alfred's second battle of a
+    // session: the stamps and the preloaded winner line are all in `memo`),
+    // which the e2e never exercises because every run is a fresh context.
+    // Defence in depth, one line (audit, 2026-10-13).
+    if (signal?.aborted) return finish();
     if (signal) signal.addEventListener('abort', () => { try { el.pause(); } catch { /* ignore */ } finish(); }, { once: true });
     // Re-check right before play(): the clip's fetch may have been in flight when
     // mute got tapped, so `muted` at call time isn't good enough.

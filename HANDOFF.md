@@ -218,6 +218,55 @@ proof, and four vacuous assertions. All fixed:
   the settle (→12,826 ms) and removing `finaleCut` from `skip()` (→4,505 ms)
   both leave `npm test` 100 % green. If a merge gate is ever added here it
   has to run `test:e2e`.
+### A fourth audit (2026-10-13) — the best mutation yet, and it was in CSS
+
+- **The overflow guard matched class NAMES, not the property, and three lines
+  of CSS put the owner's bug back with everything green.** Adding
+  `overflow-x: hidden` to `.kq-screen-in` in `src/styles/home.css` — a class
+  that sits on BattleSetup's, BattlePreview's and both BattleFocusSelection
+  roots — left `npm test`, typecheck, lint, build and the whole finale e2e
+  passing while the sticky header holding the ONLY way out of those screens
+  scrolled off: measured **top −617 on BattleSetup at 320 px**, Back button
+  gone. Alfred passes BattleSetup on every single battle. It is not contrived
+  bait, either: the 1 px item below invites exactly that edit ("the animating
+  screen scrolls sideways" → clip overflow on the animating screen's class).
+  **Closed with both halves:** `arenaWiring` § 2b collects every class on a
+  `min-h-screen` root and refuses an `overflow` declaration on any of them in
+  `home.css` (with an anti-rot self-test on that exact mutation), and the new
+  `tests/e2e/sticky-escape.mjs` MEASURES the rendered position of the escape
+  control on the Encyclopedia and on BattleSetup at 320/390/820 with a full
+  101-monster roster seeded. Both go red on the mutation; the browser one took
+  two attempts, because the first walk tapped the bottom nav's "Battle" and
+  never left GameLayout — BattleSetup is behind **"Start Battle"**, and the
+  check now asserts it is really there (`navs === 0`, root carries
+  `kq-screen-in`) before measuring anything.
+- **The unmount abort was advertised in three places and pinned by nothing.**
+  Deleting it kept all 4,127 unit checks and typecheck green, and no e2e can
+  see it because none of them taps Continue, so the arena is never unmounted
+  in any test. Harm: ElevenLabs slower than the 10 s cap → the sheet appears
+  while the stamp is still fetching → Alfred taps Continue → the arena
+  unmounts → the clip lands and plays **over the main menu**, with no arena
+  left to silence it (unmount is the one abort path that does not set
+  `finaleCut`). Now pinned by slicing the mount effect's cleanup body.
+- **`playOn` installed its abort listener without checking `signal.aborted`.**
+  An already-aborted signal never fires `abort`, so such a clip is
+  unstoppable. Not reachable through `speak()`/`roar()` today, but after the
+  finale's own controller landed that pre-check is the only guard — and the
+  case it covers is the CACHED path (Alfred's **second** battle of a session,
+  where both stamps and the preloaded winner line are in `memo`), which no
+  e2e exercises because every run is a fresh browser context. One line of
+  defence in depth.
+- **Two exact-count assertions became lower bounds.** § 2 was rewritten
+  because its old regex went red on a correct change; pinning `=== 2` aborts
+  and `=== 3` `fsignal()` calls would have done the same thing to a fourth
+  finale line. The `!/signal: vsignal\(\)/` absence check is what actually
+  holds that contract.
+- **Wording corrected:** the four extra roots' "−605 understates it by an
+  order of magnitude" is roster-dependent — the audit measured exactly −605
+  with 17 cards and −617 at 320 px, and the −6,861 figure implies a ~7,400 px
+  document, which only a full roster produces. Both numbers are right for
+  their own roster; the comparison was not.
+
 - **Open, not a blocker: 1 px of sideways scroll at 320 px.** `kq-no-x` used to
   clip it. Max `scrollWidth - innerWidth` over 3.6 s with a full roster:
   **1 px on BattleFocusSelection's advice view at 320×568**, 0 px at 375, 390
@@ -225,11 +274,13 @@ proof, and four vacuous assertions. All fixed:
   animated `.sprite-guard`/`.sprite-body` (right edge 323.9 at 320 px). Inside
   `smoke.mjs`'s own `overflow <= 1` tolerance. Don't re-chase it as a layout
   bug.
-- **Also measured by that audit, and better than claimed:** the four extra
-  roots' Back buttons sat at y **−6,861 / −6,585 / −4,345 / −3,445** on
-  BattleSetup step 1 at 320 / 390 / 820 / 1280 with a 101-monster roster —
-  an order of magnitude worse than the −605 quoted below. After: sticky header
-  top 0 and Back at +12 on every screen at every width.
+- **Also measured by that audit:** the four extra roots' Back buttons sat at y
+  **−6,861 / −6,585 / −4,345 / −3,445** on BattleSetup step 1 at
+  320 / 390 / 820 / 1280 with a 101-monster roster. A broken sticky header
+  sits at exactly −scrollY, so the magnitude is purely document height: the
+  −605 quoted below is correct for a smaller roster (a fourth audit measured
+  exactly −605 with 17 cards), and these figures for a full one. After:
+  sticky header top 0 and Back at +12 on every screen at every width.
 
 **One claim in the first cut was wrong:** "lint 0 errors (20 pre-existing
 warnings)" — main has 19; that PR added the 20th. The missing dependency is
