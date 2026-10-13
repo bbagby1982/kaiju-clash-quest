@@ -46,11 +46,19 @@ const TYPES = { '.html':'text/html', '.js':'text/javascript', '.css':'text/css',
   '.woff2':'font/woff2', '.ico':'image/x-icon' };
 
 let mode = 'voice';          // 'voice' | 'silent'
+// ElevenLabs is routinely 1-3s. On localhost /api/voice answers in under 5ms,
+// which is precisely why a whole class of defect is invisible here: a clip
+// that is still being FETCHED when the kid taps SKIP used to arrive and start
+// playing over the results sheet (audit, 2026-10-13). `latencyMs` buys that
+// back on demand.
+let latencyMs = 0;
 const server = http.createServer((req, res) => {
   const url = decodeURIComponent((req.url || '/').split('?')[0]);
   if (url === '/api/voice') {
     if (mode === 'silent') { res.writeHead(503, { 'content-type': 'application/json' }); return res.end('{}'); }
-    res.writeHead(200, { 'content-type': 'audio/wav' }); return res.end(CLIP);
+    const send = () => { res.writeHead(200, { 'content-type': 'audio/wav' }); res.end(CLIP); };
+    if (latencyMs > 0) { setTimeout(send, latencyMs); return; }
+    return send();
   }
   if (url.startsWith('/api/')) { res.writeHead(503, { 'content-type': 'application/json' }); return res.end('{}'); }
   let f = path.join(dist, url);
@@ -93,6 +101,16 @@ const BACKWARDS = '^(go back|back|cancel|close|mute|unmute|sound)';
 async function playOneBattle(label, opts = {}) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const page = await ctx.newPage();
+  // Every <audio>.play(), with the wall-clock time it was called. The only
+  // way to prove a clip did NOT start after the results sheet went up.
+  await page.addInitScript(() => {
+    window.__plays = [];
+    const real = HTMLMediaElement.prototype.play;
+    HTMLMediaElement.prototype.play = function (...a) {
+      try { window.__plays.push({ at: Date.now(), src: String(this.currentSrc || this.src || '').slice(-24) }); } catch { /* ignore */ }
+      return real.apply(this, a);
+    };
+  });
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   await page.goto(BASE, { waitUntil: 'load' });
@@ -168,8 +186,11 @@ async function playOneBattle(label, opts = {}) {
   assert.ok(!errors.length, `${label}: page errors — ${errors.join(' | ')}`);
   assert.ok(rounds >= 1, `${label}: played ${rounds} rounds`);
   assert.ok(resultsAt, `${label}: THE RESULTS SHEET NEVER APPEARED — a child is stuck in a finished fight`);
+  // Give a straggler every chance to show up before declaring there was none.
+  if (opts.watchForLateAudio) await page.waitForTimeout(opts.watchForLateAudio);
+  const plays = await page.evaluate(() => window.__plays || []).catch(() => []);
   await ctx.close();
-  return { held: finaleAt ? resultsAt - finaleAt : -1, rounds };
+  return { held: finaleAt ? resultsAt - finaleAt : -1, rounds, resultsAt, plays };
 }
 
 console.log('— run 1: the voice works —');
@@ -177,8 +198,18 @@ mode = 'voice';
 const withVoice = await playOneBattle('with voice');
 console.log(`  rounds ${withVoice.rounds} · finale stamp → results sheet: ${withVoice.held}ms (clip is ${CLIP_SECONDS * 1000}ms)`);
 assert.ok(withVoice.held > 0, 'the finale caption was never detected — this run proves nothing (fix the detector, do not blame the fix)');
-assert.ok(withVoice.held >= CLIP_SECONDS * 1000,
-  `the results sheet cut the voice off: it arrived ${withVoice.held}ms after the finale stamp, inside a ${CLIP_SECONDS * 1000}ms clip`);
+// TWO clips, not one. This bar was `>= CLIP_SECONDS * 1000` (2,000ms) and it
+// could not fail for the thing it names: the finale's beat list is
+// 300 + 1200 + 1300ms and it runs BEFORE `holdForFinaleVoice` is reached at
+// all, so `held` has a structural floor of ~2,800ms — already over the bar.
+// Proven by the one-character mutation `if (!finaleCut.current)` →
+// `if (finaleCut.current)`, which stops the arena waiting for the winner's
+// line in ORDINARY play — the owner's reported bug, in full — and left this
+// file and all 4,116 unit checks green at 2,729–2,856ms.
+// The finale speaks the announcer's stamp AND the winner's line, so a working
+// build holds for both: measured 4,448–4,663ms against 2,729–2,856ms broken.
+assert.ok(withVoice.held >= 2 * CLIP_SECONDS * 1000,
+  `the results sheet cut the voice off: it arrived ${withVoice.held}ms after the finale stamp, and the finale speaks TWO ${CLIP_SECONDS * 1000}ms clips (the announcer's stamp, then the winner's line)`);
 assert.ok(withVoice.held < 15000, `the cap is not holding: ${withVoice.held}ms`);
 
 // ── H1: muting mid-finale must not freeze the results for the whole cap ───
@@ -219,7 +250,28 @@ assert.ok(skipped.held > 0, 'the finale caption was never detected in the skip r
 assert.ok(skipped.held < 2500,
   `one tap on SKIP did not skip: the sheet took ${skipped.held}ms (untapped was ${withVoice.held}ms)`);
 
-console.log('\n✅ the winner finishes their line, a skip really skips, a mute really mutes, and the fight always ends');
+// ── M2: ON A REAL NETWORK, A SKIP MUST NOT BE FOLLOWED BY A STRAY CLIP ────
+// `stopSpeaking()` settles clips that are already PLAYING; it does nothing to
+// one still in flight from /api/voice, and `speak()` re-checked only
+// `muted`/`aborted`, never the finale's own cut. So on Alfred's actual
+// network the announcer's clip arrived AFTER the results sheet and started
+// talking over it — measured by the audit at 1.6s after the sheet, and
+// completely invisible at localhost latency. The fix is the finale's own
+// AbortController, aborted by skip(); this run is what proves it, so it
+// deliberately slows the server down to something honest.
+console.log('— run 4: one tap on SKIP, with a 1.5s voice server (a real phone) —');
+mode = 'voice';
+latencyMs = 1500;
+const lateCheck = await playOneBattle('skipped at finale, slow voice', { skipAtFinale: true, watchForLateAudio: 3000 });
+latencyMs = 0;
+const late = lateCheck.plays.filter(p => p.at > lateCheck.resultsAt + 150);
+console.log(`  rounds ${lateCheck.rounds} · held ${lateCheck.held}ms · ${lateCheck.plays.length} clips played, ${late.length} after the sheet`);
+assert.ok(lateCheck.plays.length > 0,
+  'no audio played at all in this run — it proves nothing (fix the fixture, do not blame the fix)');
+assert.deepEqual(late, [],
+  `a clip started AFTER the results sheet was up — the kid skipped and got talked over anyway: ${JSON.stringify(late)} (sheet at ${lateCheck.resultsAt})`);
+
+console.log('\n✅ the winner finishes their line, a skip really skips (and stays skipped on a slow network), a mute really mutes, and the fight always ends');
 await browser.close();
 server.close();
 process.exit(0);

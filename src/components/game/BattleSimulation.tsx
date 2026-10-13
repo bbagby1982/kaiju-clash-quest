@@ -180,6 +180,17 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
   const voice = useVoice();
   const voiceAbort = useRef<AbortController | null>(null);
   const vsignal = useCallback((): AbortSignal | undefined => voiceAbort.current?.signal, []);
+  // ── THE FINALE'S OWN SIGNAL (audit, 2026-10-13) ─────────────────────────
+  // `voiceAbort` is the whole arena's, aborted only on unmount. The finale
+  // needs one it can abort by itself, because `stopSpeaking()` settles clips
+  // that are already PLAYING and does nothing to one still being fetched:
+  // tapping SKIP while the announcer's clip was in flight let it arrive and
+  // start playing OVER the results sheet. Measured with a realistic 2s
+  // /api/voice latency: sheet up at 50,253ms, a fresh clip starting at
+  // 51,839ms. Invisible on localhost (<5ms), which is why the suite missed it
+  // and why this is about Alfred's actual network, not ours.
+  const finaleAbort = useRef<AbortController | null>(null);
+  const fsignal = useCallback((): AbortSignal | undefined => finaleAbort.current?.signal, []);
   const voiceSpokenForToken = useRef(-1);
   // ── THE WINNER GETS TO FINISH TALKING (owner, 2026-10-12) ───────────────
   // "in the godzilla game the voice over keeps getting cut off before it moves
@@ -298,12 +309,25 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
     // The finale's voice hold runs AFTER the sequence has finished, so
     // seq.current is already null: without this the tap would land on a
     // control that does nothing at all.
-    if (releaseFinale.current) { releaseFinale.current(); return; }
+    if (releaseFinale.current) {
+      // Same reason as the finale branch below: the hold is over, so nothing
+      // may still be on its way to the speaker.
+      finaleCut.current = true;
+      try { finaleAbort.current?.abort(); } catch { /* ignore */ }
+      releaseFinale.current();
+      return;
+    }
     const s = seq.current;
     if (!s) return;
     // Mid-finale: cut the voice AND the hold that has not begun yet, so one
     // tap really is one tap.
-    if (phaseRef.current === 'finale') { finaleCut.current = true; stopSpeaking(); }
+    // `stopSpeaking()` settles what is playing; the abort kills what is still
+    // being FETCHED, so a clip cannot land after the sheet does.
+    if (phaseRef.current === 'finale') {
+      finaleCut.current = true;
+      try { finaleAbort.current?.abort(); } catch { /* ignore */ }
+      stopSpeaking();
+    }
     clearTimers();
     seq.current = null;
     suppressVisuals.current = true;
@@ -342,6 +366,13 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
         await waitForLine(spoken, FINALE_VOICE_MAX_MS, (release) => { releaseFinale.current = release; });
       } catch { /* a hold that fails is still a hold that is over */ }
       releaseFinale.current = null;
+    } else {
+      // Cut before the hold existed: nothing awaits `spoken` now. `speak()`
+      // cannot currently reject, but this whole function is wrapped in
+      // try/catch precisely because nothing about the voice may leave a
+      // finished fight without its results sheet — and an unobserved
+      // rejection is the one path that would bypass that.
+      void spoken?.catch(() => { /* a line that failed is a line that is over */ });
     }
     if (!mounted.current) return;
     setPhaseTracked('results');
@@ -536,6 +567,8 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
   const startFinale = useCallback((result: RoundResult) => {
     setPhaseTracked('finale');
     finaleCut.current = false;
+    try { finaleAbort.current?.abort(); } catch { /* ignore */ }
+    finaleAbort.current = new AbortController();
     const koed = result.playerHP <= 0 || result.opponentHP <= 0;
     const stampText = koed ? 'K.O.!' : "TIME'S UP";
     const stampColor = koed ? '#ff3d00' : '#eab308';
@@ -546,7 +579,14 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
     // means the chain below speaks the same line we warmed, not a new draw.
     const winLine  = pickLine(PLAYER_WIN_LINES);
     const loseLine = pickLine(OPPONENT_WIN_LINES);
-    preloadSpeech(stampText, 'announcer');
+    // The STAMP is deliberately not prefetched. `fetchClip` has no in-flight
+    // dedup, and the stamp is spoken only 300ms later — so on any real
+    // network the preload is still in flight when `speak()` asks for it and
+    // the same line is fetched TWICE, the second `remember()` overwriting the
+    // first object URL without revoking it (measured: 2 POSTs, 1 leaked blob
+    // URL, with a 900ms server). The WINNER's line is the one worth warming:
+    // it is a random draw, so always a cache miss, and its round trip used to
+    // happen INSIDE the hold where the 10s cap never budgeted for it.
     if (result.winner === 'player') preloadSpeech(winLine, 'godzilla');
     else if (result.winner === 'opponent') preloadSpeech(loseLine, 'godzilla2');
 
@@ -579,12 +619,12 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
           // chained instead of fired together or they'd cut each other off.
           // KEPT, not dropped: the done callback below waits on this.
           finaleSpeech.current = (async () => {
-            await speak(stampText, 'announcer', { signal: vsignal() });
+            await speak(stampText, 'announcer', { signal: fsignal() });
             // He tapped SKIP, or muted, while the announcer was still going —
             // do not then play the line he just asked to be rid of.
             if (finaleCut.current) return;
-            if (result.winner === 'player') await speak(winLine, 'godzilla', { signal: vsignal() });
-            else if (result.winner === 'opponent') await speak(loseLine, 'godzilla2', { signal: vsignal() });
+            if (result.winner === 'player') await speak(winLine, 'godzilla', { signal: fsignal() });
+            else if (result.winner === 'opponent') await speak(loseLine, 'godzilla2', { signal: fsignal() });
           })();
         },
       },
@@ -593,7 +633,7 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
       setWinner(result.winner ?? 'tie');
       void holdForFinaleVoice();
     });
-  }, [holdForFinaleVoice, map, opponentMonster, play, playerMonster, pushFX, requestNarration, setPhaseTracked, showCaption, triggerShake, vsignal]);
+  }, [fsignal, holdForFinaleVoice, map, opponentMonster, play, playerMonster, pushFX, requestNarration, setPhaseTracked, showCaption, triggerShake]);
 
   const beginRound = useCallback((n: number) => {
     roundRef.current = n;
@@ -729,6 +769,9 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
       seq.current = null;
       narrationAbort.current?.abort();
       voiceAbort.current?.abort();
+      // The finale has its own controller (see `finaleAbort`); unmounting
+      // mid-finale must not leave a clip still on its way to the speaker.
+      finaleAbort.current?.abort();
     };
     // Mount-only: the fight owns its own lifecycle from here.
     // eslint-disable-next-line react-hooks/exhaustive-deps

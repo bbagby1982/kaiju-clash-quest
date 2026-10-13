@@ -102,10 +102,18 @@ async function fetchClip(key: string, body: Record<string, unknown>, signal?: Ab
   }
 }
 
-// Every in-flight playOn's `finish`. `stopSpeaking()` calls them, because a
-// `pause()` fires no event and would otherwise leave the promise pending for
-// good: mute mid-finale used to hang the arena's victory line forever, and the
-// results sheet then waited out its whole 10s cap in silence (audit, 2026-10-12).
+// Every in-flight SPEECH playOn's `finish`. `stopSpeaking()` calls them,
+// because a `pause()` fires no event and would otherwise leave the promise
+// pending for good: mute mid-finale used to hang the arena's victory line
+// forever, and the results sheet then waited out its whole 10s cap in silence
+// (audit, 2026-10-12).
+//
+// SPEECH ONLY, deliberately. This held every playOn, roars included, and
+// `speak()` calls `stopSpeaking()` on every interrupting line — so a spoken
+// line settled an in-flight roar's promise early while `stopSpeaking()`
+// pointedly does NOT pause `roarEl`, leaving the roar audible after its
+// awaiter had been told it was over. Observable in the admin Voice Test
+// panel, whose roar spinner cleared mid-roar (audit, 2026-10-13).
 const playing = new Set<() => void>();
 
 function playOn(el: HTMLAudioElement | null, url: string, signal?: AbortSignal): Promise<void> {
@@ -113,7 +121,7 @@ function playOn(el: HTMLAudioElement | null, url: string, signal?: AbortSignal):
     if (!el) return resolve();
     let done = false;
     const finish = () => { if (done) return; done = true; playing.delete(finish); el.removeEventListener('ended', finish); el.removeEventListener('error', finish); resolve(); };
-    playing.add(finish);
+    if (el === speechEl) playing.add(finish);
     el.addEventListener('ended', finish);
     el.addEventListener('error', finish);
     if (signal) signal.addEventListener('abort', () => { try { el.pause(); } catch { /* ignore */ } finish(); }, { once: true });
@@ -250,8 +258,15 @@ export function waitForLine(
       tell(null);
       resolve(how);
     };
-    // NaN/undefined would make setTimeout fire immediately — fail-open, never
-    // a stall, but a silent no-hold. Pin it to something meaningful instead.
+    // A nonsense cap (NaN, undefined, Infinity, negative) must fail OPEN —
+    // the results sheet appearing a touch early is survivable, a child stuck
+    // in a finished fight is not. All of those resolve `capped` within a
+    // millisecond or two, and `Math.max(0, …)` is NOT a behaviour change for
+    // any of them: it is here so the arithmetic is readable, not because it
+    // fixes anything. (An earlier comment here claimed it "pins the cap to
+    // something meaningful"; it pins it to 0, which is the silent no-hold
+    // that sentence named as the problem. Corrected 2026-10-13 — see § 9 of
+    // tests/voiceWait.test.mjs, which is green on both versions.)
     const ms = Number.isFinite(capMs) ? Math.max(0, capMs as number) : 0;
     const cap = setTimeout(() => done('capped'), ms);
     tell(() => { stopSpeaking(); done('released'); });

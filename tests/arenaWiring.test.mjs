@@ -95,13 +95,44 @@ console.log('\n== 2. "TAP TO SKIP" stays a live control during that wait ==');
 // The beat sequence is finished by then, so skip()'s `if (!seq.current) return`
 // would make the tap do nothing at all — a dead control, which is never the
 // answer to anything.
-ok(/if \(releaseFinale\.current\) \{ releaseFinale\.current\(\); return; \}/.test(ARENA),
+// Scoped to skip()'s own body, and matched on the PROPERTY rather than a
+// one-line spelling — the old regex pinned `{ releaseFinale.current(); return; }`
+// exactly and went red the moment the branch gained the abort below, which is
+// a test breaking on a correct change.
+const skipBody = ARENA.slice(ARENA.indexOf('const skip = useCallback'), ARENA.indexOf('}, [clearTimers]);'));
+ok(skipBody.length > 200 && skipBody.length < 2500, `skip()'s body was isolated (${skipBody.length} chars)`);
+const RELEASE_FIRST = /if \(releaseFinale\.current\) \{[\s\S]{0,200}?releaseFinale\.current\(\);[\s\S]{0,80}?return;/;
+ok(RELEASE_FIRST.test(skipBody),
   'skip() releases the voice hold BEFORE its no-sequence early return');
-const skipBody = ARENA.slice(ARENA.indexOf('const skip = useCallback'));
+// Anti-rot, both directions: the regex must match a correct body and reject
+// one where the release is not actually called.
+ok(RELEASE_FIRST.test('if (releaseFinale.current) { releaseFinale.current(); return; }'),
+  'and that check matches the shape it demands, so it is not anchored on nothing');
+ok(!RELEASE_FIRST.test('if (releaseFinale.current) { finaleCut.current = true; return; }'),
+  'while rejecting a branch that returns WITHOUT releasing — a dead tap again');
 ok(skipBody.indexOf('releaseFinale.current') < skipBody.indexOf('const s = seq.current'),
   'and does so first, so the tap can never land on nothing');
 ok(/\(release\) => \{ releaseFinale\.current = release; \}/.test(ARENA),
   'the releaser is handed in and cleared by waitForLine itself');
+// ── ONE TAP, AND NOTHING ARRIVES AFTER THE SHEET ────────────────────────
+// `stopSpeaking()` settles clips that are PLAYING and does nothing to one
+// still being fetched. Measured with a realistic 2s /api/voice latency: the
+// results sheet was up at 50,253ms and a fresh announcer clip started at
+// 51,839ms, over the top of it. Invisible on localhost (<5ms), so only a
+// structural check holds this.
+ok(/const finaleAbort = useRef<AbortController \| null>\(null\);/.test(ARENA),
+  'the finale has its OWN abort controller, separate from the arena-lifetime one');
+ok((skipBody.match(/finaleAbort\.current\?\.abort\(\)/g) || []).length === 2,
+  'and skip() aborts it on BOTH exits — the released-hold one and the mid-finale one');
+ok(/finaleAbort\.current = new AbortController\(\);/.test(ARENA),
+  'a fresh one per finale, so battle 2 is not born aborted');
+const finaleBody = ARENA.slice(ARENA.indexOf('const startFinale = useCallback'), ARENA.indexOf('const beginRound = useCallback'));
+ok(finaleBody.length > 500 && !/signal: vsignal\(\)/.test(finaleBody),
+  `the finale's speech uses the finale's signal, not the arena's (${finaleBody.length} chars)`);
+ok((finaleBody.match(/signal: fsignal\(\)/g) || []).length === 3,
+  'all three of its lines — stamp, win, lose — go through it');
+ok(!/preloadSpeech\(stampText/.test(ARENA),
+  'and the stamp is not prefetched 300ms before it is spoken, which just fetched it twice and leaked a blob URL');
 
 console.log('\n== 3. The header and the bottom nav can actually stick ==');
 // Owner: "there is not back button when you are on the monster encyclopedia
@@ -120,8 +151,23 @@ ok(rootDiv && !/kq-no-x/.test(rootDiv[1]),
 // Tailwind's `overflow-x-hidden` reinstated the bug in full (measured: header
 // -600, nav 11193 at scrollY 600) with the whole suite green. What matters is
 // that NOTHING on that root makes it a scroll container.
-ok(rootDiv && !/overflow-x-hidden|overflow-hidden|overflow-x-clip|overflow-auto|overflow-y-/.test(rootDiv[1]),
+// ONE pattern, not a list of spellings. The list form missed
+// `overflow-x-auto`, `overflow-x-scroll`, `overflow-scroll` and
+// `overflow-clip` (note `overflow-auto` is not a substring of
+// `overflow-x-auto`), and an audit proved it: a root carrying
+// `overflow-x-auto` kept all 33 checks green and put the owner's bug back in
+// full — Encyclopedia at 390x844, header top −600, nav top 11,117 in an
+// 11,779px document, neither on screen at any scroll position.
+const OVERFLOW_UTIL = /\boverflow(-[xy])?-(hidden|auto|scroll|clip)\b/;
+ok(rootDiv && !OVERFLOW_UTIL.test(rootDiv[1]),
   'and carries no other overflow utility either — any of them re-breaks sticky: ' + (rootDiv && rootDiv[1]));
+// ...and the pattern must actually reject the spellings the list missed.
+ok(['overflow-x-auto','overflow-x-scroll','overflow-scroll','overflow-clip',
+    'overflow-hidden','overflow-x-hidden','overflow-y-auto']
+     .every(u => OVERFLOW_UTIL.test('min-h-screen flex ' + u)),
+  'and that pattern catches every spelling, including the four the old list let through');
+ok(!OVERFLOW_UTIL.test('min-h-screen flex flex-col bg-background'),
+  'while a clean root still passes it');
 ok(/<main key=\{activeTab\} className="[^"]*kq-no-x/.test(LAYOUT),
   'the clipping still happens on <main>, where wide content actually lives');
 ok(/\.kq-no-x\s*\{[^}]*overflow-x:\s*hidden/.test(CSS),
@@ -136,7 +182,7 @@ ok(/\.kq-no-x\s*\{[^}]*overflow-x:\s*hidden/.test(CSS),
   const src = stripComments(read(`src/components/game/${name}.tsx`));
   const roots = src.match(/className="min-h-screen[^"]*"/g) || [];
   ok(roots.length > 0, `${name} has a full-screen root`);
-  roots.forEach((r) => ok(!/kq-no-x|overflow-x-hidden|overflow-hidden/.test(r),
+  roots.forEach((r) => ok(!/kq-no-x/.test(r) && !OVERFLOW_UTIL.test(r),
     `${name}'s root does not re-break its own sticky header: ${r}`));
   ok(/sticky top-0/.test(src), `${name} still has the sticky header that holds its Back button`);
 });

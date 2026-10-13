@@ -137,9 +137,12 @@ proof, and four vacuous assertions. All fixed:
   reverting the settle reproduces 12,780 ms.
 - **"TAP TO SKIP" during the finale took two taps.** The beats run ~2.8 s, during
   which the hold has not started and `releaseFinale` is null — so the first tap
-  flushed the animation and then *began* a 4-10 s wait. Measured: 6,551 ms
-  tapped vs 6,588 ms untapped; the tap bought nothing. `finaleCut` now cuts the
-  voice and the hold that has not begun. **649 ms** after the fix.
+  flushed the animation and then *began* a 4-10 s wait. Measured on the real
+  pre-fix source: **4,513 ms tapped vs 4,663 ms untapped** — the tap bought
+  nothing. (An earlier version of this file said 6,551 vs 6,588; a second
+  audit could not reproduce those two absolute figures, only the conclusion.
+  Corrected 2026-10-13.) `finaleCut` now cuts the voice and the hold that has
+  not begun. **668-712 ms** after the fix, over five runs.
 - **The e2e failed ~4 runs in 5 and blamed the fix.** It detected the finale by
   `\bvictory\b` over the page text, but a player win reads "stands
   *victorious*" and VICTORY/DEFEAT/TIE exist only inside the results sheet,
@@ -161,12 +164,72 @@ proof, and four vacuous assertions. All fixed:
   outside `GameLayout`. Alfred passes `BattleSetup` on every battle. Removed
   there too. `MonsterProfile` keeps it correctly: it is `fixed inset-0
   overflow-y-auto`, its own scroll container by design.
-- `waitForLine` now guards both `onRelease` calls and sanitises a non-finite
-  cap; `holdForFinaleVoice` catches. Nothing about the voice can strand the
-  sheet.
+- `waitForLine` now guards both `onRelease` calls; `holdForFinaleVoice`
+  catches. Nothing about the voice can strand the sheet. **It does NOT
+  "sanitise a non-finite cap"** — an earlier version of this file claimed it
+  did, and a second audit executed old against new: NaN / undefined /
+  Infinity already resolved `capped` in 1-2 ms on both, so § 9 of
+  `voiceWait` is green on the old code too. `Math.max(0, capMs)` is there for
+  readability, not behaviour, and the in-code comment that said it "pins the
+  cap to something meaningful" was wrong in the other direction — it pins it
+  to 0, the silent no-hold that sentence named as the problem. Both
+  corrected 2026-10-13.
 - The winner's line is **preloaded** at `startFinale`. It is picked at random
   per battle, so it was always a cache miss and its ElevenLabs round trip
-  happened *inside* the hold — the cap arithmetic never budgeted for it.
+  happened *inside* the hold — the cap arithmetic never budgeted for it. The
+  **stamp** is deliberately NOT preloaded: `fetchClip` has no in-flight dedup
+  and the stamp is spoken 300 ms later, so on any real network the preload was
+  still in flight and the same line was fetched twice, the second `remember()`
+  overwriting the first object URL without revoking it (measured: 2 POSTs, 1
+  leaked blob URL, 900 ms server). Removed 2026-10-13.
+
+### A third audit (2026-10-13) — two more things, and what is still open
+
+- **The e2e's headline assertion could not fail for the thing it names.** It
+  asserted `held >= 2,000 ms`, but the finale's beats are 300 + 1200 + 1300 ms
+  and run *before* the hold is reached at all, so `held` has a structural floor
+  of ~2,800 ms. The one-character mutation `if (!finaleCut.current)` →
+  `if (finaleCut.current)` — which stops the arena waiting for the winner's
+  line in **ordinary play**, the owner's original bug in full — left all 4,116
+  unit checks and every e2e run green at 2,729-2,856 ms. The bar is now
+  `>= 2 × CLIP_SECONDS` (4,000 ms); working builds measure 4,448-4,663 ms and
+  the mutation now fails at 2,727 ms.
+- **One tap on SKIP still played a stray clip over the results sheet — on a
+  real network only.** `stopSpeaking()` settles clips that are *playing* and
+  does nothing to one still being fetched, and `speak()` re-checked only
+  `muted`/`aborted`, never the finale's cut. Measured by the audit with a 2 s
+  `/api/voice`: sheet up at 50,253 ms, a fresh clip starting at 51,839 ms.
+  Invisible at localhost latency (<5 ms), which is why the suite missed it.
+  Fixed with a per-finale `AbortController` (`finaleAbort`), aborted on both of
+  `skip()`'s exits and on unmount; the finale's three lines now carry
+  `fsignal()`, not the arena-lifetime `vsignal()`. `finale-voice.mjs` run 4
+  drives it with a **1.5 s voice server** and asserts no `<audio>.play()`
+  happens after the sheet.
+- **`stopSpeaking()` used to settle a ROAR.** Every `playOn` registered its
+  `finish` in the shared `playing` set, roars included, and `speak()` calls
+  `stopSpeaking()` on each interrupting line — so a spoken line told a roar's
+  awaiter the roar was over while `stopSpeaking()` deliberately does not pause
+  `roarEl`. No kid-facing effect today (the arena only does `void roar(...)`),
+  but the admin Voice Test panel's roar spinner cleared mid-roar. Now only the
+  speech element's `finish` is registered.
+- **`npm test` protects neither fixed bug.** Both regressions are caught only
+  by `tests/e2e/finale-voice.mjs`, which is in `npm run test:e2e`, not
+  `npm test` — and this repo has **no CI config at all**. Verified: removing
+  the settle (→12,826 ms) and removing `finaleCut` from `skip()` (→4,505 ms)
+  both leave `npm test` 100 % green. If a merge gate is ever added here it
+  has to run `test:e2e`.
+- **Open, not a blocker: 1 px of sideways scroll at 320 px.** `kq-no-x` used to
+  clip it. Max `scrollWidth - innerWidth` over 3.6 s with a full roster:
+  **1 px on BattleFocusSelection's advice view at 320×568**, 0 px at 375, 390
+  and above, 0 px on every other screen. The offender is the sprite's own
+  animated `.sprite-guard`/`.sprite-body` (right edge 323.9 at 320 px). Inside
+  `smoke.mjs`'s own `overflow <= 1` tolerance. Don't re-chase it as a layout
+  bug.
+- **Also measured by that audit, and better than claimed:** the four extra
+  roots' Back buttons sat at y **−6,861 / −6,585 / −4,345 / −3,445** on
+  BattleSetup step 1 at 320 / 390 / 820 / 1280 with a 101-monster roster —
+  an order of magnitude worse than the −605 quoted below. After: sticky header
+  top 0 and Back at +12 on every screen at every width.
 
 **One claim in the first cut was wrong:** "lint 0 errors (20 pre-existing
 warnings)" — main has 19; that PR added the 20th. The missing dependency is
