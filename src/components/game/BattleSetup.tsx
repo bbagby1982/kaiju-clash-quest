@@ -27,7 +27,7 @@ function SetupShell({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-b from-background to-card kq-no-x kq-screen-in">
+    <div className="min-h-screen flex flex-col bg-gradient-to-b from-background to-card kq-screen-in">
       <div className="sticky top-0 z-20 flex items-center gap-3 px-4 py-3 bg-background/85 backdrop-blur-md border-b border-border kq-safe-top">
         <button
           type="button"

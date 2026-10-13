@@ -9,9 +9,11 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.app.json --noEmit",
-    "test": "node tests/battleEngine.test.mjs && node tests/functions.test.mjs",
-    "test:e2e": "node tests/e2e/smoke.mjs",
-    "preview": "vite preview"
+    "test": "node tests/battleEngine.test.mjs && node tests/functions.test.mjs && node tests/voiceWait.test.mjs && node tests/arenaWiring.test.mjs",
+    "test:e2e": "node tests/e2e/smoke.mjs && node tests/e2e/finale-voice.mjs && node tests/e2e/sticky-escape.mjs",
+    "preview": "vite preview",
+    "test:finale": "node tests/e2e/finale-voice.mjs",
+    "test:sticky": "node tests/e2e/sticky-escape.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.123.0",

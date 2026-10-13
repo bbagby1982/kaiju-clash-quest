@@ -102,13 +102,37 @@ async function fetchClip(key: string, body: Record<string, unknown>, signal?: Ab
   }
 }
 
+// Every in-flight SPEECH playOn's `finish`. `stopSpeaking()` calls them,
+// because a `pause()` fires no event and would otherwise leave the promise
+// pending for good: mute mid-finale used to hang the arena's victory line
+// forever, and the results sheet then waited out its whole 10s cap in silence
+// (audit, 2026-10-12).
+//
+// SPEECH ONLY, deliberately. This held every playOn, roars included, and
+// `speak()` calls `stopSpeaking()` on every interrupting line — so a spoken
+// line settled an in-flight roar's promise early while `stopSpeaking()`
+// pointedly does NOT pause `roarEl`, leaving the roar audible after its
+// awaiter had been told it was over. Observable in the admin Voice Test
+// panel, whose roar spinner cleared mid-roar (audit, 2026-10-13).
+const playing = new Set<() => void>();
+
 function playOn(el: HTMLAudioElement | null, url: string, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     if (!el) return resolve();
     let done = false;
-    const finish = () => { if (done) return; done = true; el.removeEventListener('ended', finish); el.removeEventListener('error', finish); resolve(); };
+    const finish = () => { if (done) return; done = true; playing.delete(finish); el.removeEventListener('ended', finish); el.removeEventListener('error', finish); resolve(); };
+    if (el === speechEl) playing.add(finish);
     el.addEventListener('ended', finish);
     el.addEventListener('error', finish);
+    // An ALREADY-aborted signal never fires `abort`, so a clip started with one
+    // would be unstoppable. Not reachable through speak()/roar() today — both
+    // pre-check `signal?.aborted` with no await before play() — but after the
+    // finale's own controller landed that pre-check is the only guard, and the
+    // case it has to cover is the CACHED path (Alfred's second battle of a
+    // session: the stamps and the preloaded winner line are all in `memo`),
+    // which the e2e never exercises because every run is a fresh context.
+    // Defence in depth, one line (audit, 2026-10-13).
+    if (signal?.aborted) return finish();
     if (signal) signal.addEventListener('abort', () => { try { el.pause(); } catch { /* ignore */ } finish(); }, { once: true });
     // Re-check right before play(): the clip's fetch may have been in flight when
     // mute got tapped, so `muted` at call time isn't good enough.
@@ -123,6 +147,9 @@ function playOn(el: HTMLAudioElement | null, url: string, signal?: AbortSignal):
 
 export function stopSpeaking(): void {
   try { if (speechEl) { speechEl.pause(); speechEl.currentTime = 0; } } catch { /* ignore */ }
+  // SETTLE, don't just silence. A caller awaiting the line (the arena's
+  // finale hold) must learn it is over; `pause()` alone tells it nothing.
+  for (const finish of Array.from(playing)) { try { finish(); } catch { /* ignore */ } }
 }
 
 /** Mute-tap handler: stop BOTH the speech line and any roar in progress. */
@@ -195,4 +222,63 @@ export function useVoice() {
   }, []);
   const toggle = useCallback(() => setVoiceMuted(!muted), []);
   return { muted, available, toggle, speak, roar, preloadSpeech, preloadRoar, stop: stopSpeaking };
+}
+
+/**
+ * waitForLine — let a spoken line finish, but never let it hold a screen
+ * hostage.
+ *
+ * Owner, 2026-10-12: "in the godzilla game the voice over keeps getting cut
+ * off before it moves to the next page after the battle." The arena used to
+ * fire the announcer + the winner's line as fire-and-forget and swap in the
+ * results sheet on a fixed 1300ms timer; two real ElevenLabs clips run 4-8s,
+ * so the sheet always landed mid-sentence.
+ *
+ * Resolves on whichever comes FIRST:
+ *   1. `line` settles — the normal case, the kid hears the whole thing;
+ *   2. `capMs` elapses — a slow or dead ElevenLabs must cost a few seconds of
+ *      quiet, never a child stranded in a fight that is already over. This
+ *      module's first rule is that voice never blocks gameplay;
+ *   3. someone calls the releaser handed to `onRelease` — the kid tapped
+ *      "skip", which cuts the line on purpose.
+ *
+ * NEVER rejects and always settles — a line that throws is treated as a line
+ * that finished, and a caller hook that throws is swallowed. `onRelease(null)` is always called on
+ * the way out so a caller can drop its reference and leave no live control
+ * pointing at a finished wait.
+ */
+export function waitForLine(
+  line: Promise<unknown> | null | undefined,
+  capMs: number,
+  onRelease?: (release: (() => void) | null) => void,
+): Promise<'ended' | 'capped' | 'released' | 'none'> {
+  // EVERY call to the caller's hook is guarded. This function's whole promise
+  // is that it always resolves; an `onRelease` that threw used to reject it,
+  // or — thrown from inside `done` — leave it pending forever, which is the
+  // one outcome the design forbids (audit, 2026-10-12).
+  const tell = (r: (() => void) | null) => { try { onRelease?.(r); } catch { /* the caller's problem, never ours */ } };
+  if (!line) { tell(null); return Promise.resolve('none'); }
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (how: 'ended' | 'capped' | 'released') => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(cap);
+      tell(null);
+      resolve(how);
+    };
+    // A nonsense cap (NaN, undefined, Infinity, negative) must fail OPEN —
+    // the results sheet appearing a touch early is survivable, a child stuck
+    // in a finished fight is not. All of those resolve `capped` within a
+    // millisecond or two, and `Math.max(0, …)` is NOT a behaviour change for
+    // any of them: it is here so the arithmetic is readable, not because it
+    // fixes anything. (An earlier comment here claimed it "pins the cap to
+    // something meaningful"; it pins it to 0, which is the silent no-hold
+    // that sentence named as the problem. Corrected 2026-10-13 — see § 9 of
+    // tests/voiceWait.test.mjs, which is green on both versions.)
+    const ms = Number.isFinite(capMs) ? Math.max(0, capMs as number) : 0;
+    const cap = setTimeout(() => done('capped'), ms);
+    tell(() => { stopSpeaking(); done('released'); });
+    void Promise.resolve(line).then(() => done('ended'), () => done('ended'));
+  });
 }

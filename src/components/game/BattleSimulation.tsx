@@ -28,7 +28,7 @@ import { MonsterSprite, SpriteState } from './MonsterSprite';
 import { ArenaBackdrop } from './arena/ArenaBackdrop';
 import { BattleFXLayer, FXItem, FXSpec, fxColor, fxShapeForAbility } from './arena/BattleFX';
 import { HPBar } from './arena/HPBar';
-import { preloadRoar, roar, speak, useVoice } from '@/lib/voice';
+import { preloadRoar, preloadSpeech, roar, speak, stopSpeaking, waitForLine, useVoice } from '@/lib/voice';
 import {
   Beat,
   CHOICES,
@@ -88,6 +88,15 @@ function withHardCap(p: Promise<void>, ms: number): Promise<void> {
 
 /* ── Victory quotes — one line the winning fighter "speaks" at the finale.
    Player wins voice as 'godzilla', opponent wins voice as 'godzilla2' (src/lib/voice.ts). ── */
+/**
+ * How long the results sheet will wait for the winner's line before giving up.
+ * Measured against the real thing: the announcer's stamp runs ~1.5s and a
+ * victory line ~3-5s, so 10s covers a slow network with room to spare while
+ * still being a bound. Voice must never block gameplay (src/lib/voice.ts), so
+ * this is a CAP, not a promise that the line will be heard in full.
+ */
+const FINALE_VOICE_MAX_MS = 10000;
+
 const PLAYER_WIN_LINES = [
   'The King has spoken!',
   'Bow before the true king of the monsters!',
@@ -171,7 +180,45 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
   const voice = useVoice();
   const voiceAbort = useRef<AbortController | null>(null);
   const vsignal = useCallback((): AbortSignal | undefined => voiceAbort.current?.signal, []);
+  // ── THE FINALE'S OWN SIGNAL (audit, 2026-10-13) ─────────────────────────
+  // `voiceAbort` is the whole arena's, aborted only on unmount. The finale
+  // needs one it can abort by itself, because `stopSpeaking()` settles clips
+  // that are already PLAYING and does nothing to one still being fetched:
+  // tapping SKIP while the announcer's clip was in flight let it arrive and
+  // start playing OVER the results sheet. Measured with a realistic 2s
+  // /api/voice latency: sheet up at 50,253ms, a fresh clip starting at
+  // 51,839ms. Invisible on localhost (<5ms), which is why the suite missed it
+  // and why this is about Alfred's actual network, not ours.
+  const finaleAbort = useRef<AbortController | null>(null);
+  const fsignal = useCallback((): AbortSignal | undefined => finaleAbort.current?.signal, []);
   const voiceSpokenForToken = useRef(-1);
+  // ── THE WINNER GETS TO FINISH TALKING (owner, 2026-10-12) ───────────────
+  // "in the godzilla game the voice over keeps getting cut off before it moves
+  // to the next page after the battle."
+  //
+  // The finale fired the announcer + the winner's line as fire-and-forget and
+  // then ran a fixed 1300ms step before switching to the results sheet. Two
+  // ElevenLabs lines are comfortably 4-8s, so the sheet always slid over them
+  // mid-sentence — and tapping Continue there unmounts the arena, whose
+  // cleanup aborts the audio outright.
+  //
+  // So the results now WAIT for the speech. Bounded, because voice.ts's first
+  // rule is that it never blocks gameplay: a slow or dead ElevenLabs must cost
+  // a few seconds of nothing, never a child stranded in a finished fight.
+  const finaleSpeech = useRef<Promise<void> | null>(null);
+  // Set while the results are being held back, so the caption bar's tap stays
+  // a LIVE control instead of quietly doing nothing — the sequence is already
+  // over by then, so skip() alone would return early and the tap would be
+  // dead. A dead control is never the answer; it must always do something.
+  const releaseFinale = useRef<(() => void) | null>(null);
+  // Set when the kid cuts the finale short BEFORE the hold has started. The
+  // finale's beats run 300/1200/1300ms, so "TAP TO SKIP" is on screen for
+  // ~2.8s during which `releaseFinale` is still null — the tap took the
+  // ordinary skip path, flushed the animation, and then STARTED a 4-10s wait.
+  // Measured: the tap bought nothing (6551ms vs 6588ms without it); it took
+  // two. A control that advertises SKIP and then lengthens the wait is worse
+  // than a dead one (audit, 2026-10-12).
+  const finaleCut = useRef(false);
   const captionRef = useRef('');
   /** Speaks `text` once per token; resolves when it's done (or immediately if skipped). */
   const narrateOnce = useCallback((token: number, text: string): Promise<void> => {
@@ -259,8 +306,28 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
 
   /** Kid taps the caption bar: run the rest of the sequence instantly, state intact. */
   const skip = useCallback(() => {
+    // The finale's voice hold runs AFTER the sequence has finished, so
+    // seq.current is already null: without this the tap would land on a
+    // control that does nothing at all.
+    if (releaseFinale.current) {
+      // Same reason as the finale branch below: the hold is over, so nothing
+      // may still be on its way to the speaker.
+      finaleCut.current = true;
+      try { finaleAbort.current?.abort(); } catch { /* ignore */ }
+      releaseFinale.current();
+      return;
+    }
     const s = seq.current;
     if (!s) return;
+    // Mid-finale: cut the voice AND the hold that has not begun yet, so one
+    // tap really is one tap.
+    // `stopSpeaking()` settles what is playing; the abort kills what is still
+    // being FETCHED, so a clip cannot land after the sheet does.
+    if (phaseRef.current === 'finale') {
+      finaleCut.current = true;
+      try { finaleAbort.current?.abort(); } catch { /* ignore */ }
+      stopSpeaking();
+    }
     clearTimers();
     seq.current = null;
     suppressVisuals.current = true;
@@ -274,6 +341,42 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
     }
     s.done();
   }, [clearTimers]);
+
+  /**
+   * Hold the results sheet until the winner has finished their line.
+   *
+   * Three ways out, and the sheet appears on whichever lands first:
+   *   1. the speech ends (the normal case);
+   *   2. FINALE_VOICE_MAX_MS passes — a slow or dead ElevenLabs must never
+   *      strand a child in a fight that is already over;
+   *   3. the kid taps the caption bar, which cuts the line short on purpose.
+   * Muted or unavailable voice resolves instantly inside speak(), so a kid who
+   * plays with the sound off sees no delay at all.
+   */
+  const holdForFinaleVoice = useCallback(async () => {
+    const spoken = finaleSpeech.current;
+    finaleSpeech.current = null;
+    // He already asked to skip, before the hold existed. Honour it.
+    if (!finaleCut.current) {
+      // The race itself lives in voice.ts so it can be executed by a test
+      // without a browser or a React tree — see tests/voiceWait.test.mjs.
+      // Wrapped: nothing about the voice may ever leave a finished fight
+      // without its results sheet.
+      try {
+        await waitForLine(spoken, FINALE_VOICE_MAX_MS, (release) => { releaseFinale.current = release; });
+      } catch { /* a hold that fails is still a hold that is over */ }
+      releaseFinale.current = null;
+    } else {
+      // Cut before the hold existed: nothing awaits `spoken` now. `speak()`
+      // cannot currently reject, but this whole function is wrapped in
+      // try/catch precisely because nothing about the voice may leave a
+      // finished fight without its results sheet — and an unobserved
+      // rejection is the one path that would bypass that.
+      void spoken?.catch(() => { /* a line that failed is a line that is over */ });
+    }
+    if (!mounted.current) return;
+    setPhaseTracked('results');
+  }, [setPhaseTracked]);
 
   /* ── narrator ───────────────────────────────────────────────────────── */
   const requestNarration = useCallback((
@@ -463,9 +566,29 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
   /* ── phases ─────────────────────────────────────────────────────────── */
   const startFinale = useCallback((result: RoundResult) => {
     setPhaseTracked('finale');
+    finaleCut.current = false;
+    try { finaleAbort.current?.abort(); } catch { /* ignore */ }
+    finaleAbort.current = new AbortController();
     const koed = result.playerHP <= 0 || result.opponentHP <= 0;
     const stampText = koed ? 'K.O.!' : "TIME'S UP";
     const stampColor = koed ? '#ff3d00' : '#eab308';
+    // PICK the winner's line now and PREFETCH it. It is chosen at random per
+    // battle, so it was always a cache miss — and its ElevenLabs round trip
+    // then happened INSIDE the hold, which the 10s cap never budgeted for. On
+    // a slow phone that fetch is what clips a real line. Picking it here also
+    // means the chain below speaks the same line we warmed, not a new draw.
+    const winLine  = pickLine(PLAYER_WIN_LINES);
+    const loseLine = pickLine(OPPONENT_WIN_LINES);
+    // The STAMP is deliberately not prefetched. `fetchClip` has no in-flight
+    // dedup, and the stamp is spoken only 300ms later — so on any real
+    // network the preload is still in flight when `speak()` asks for it and
+    // the same line is fetched TWICE, the second `remember()` overwriting the
+    // first object URL without revoking it (measured: 2 POSTs, 1 leaked blob
+    // URL, with a 900ms server). The WINNER's line is the one worth warming:
+    // it is a random draw, so always a cache miss, and its round trip used to
+    // happen INSIDE the hold where the 10s cap never budgeted for it.
+    if (result.winner === 'player') preloadSpeech(winLine, 'godzilla');
+    else if (result.winner === 'opponent') preloadSpeech(loseLine, 'godzilla2');
 
     requestNarration('finale', {
       round: result.round,
@@ -494,19 +617,23 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
           // The announcer calls it, THEN the winner gets to talk — both go through the
           // one shared speech element (speak() interrupts by default), so they're
           // chained instead of fired together or they'd cut each other off.
-          void (async () => {
-            await speak(stampText, 'announcer', { signal: vsignal() });
-            if (result.winner === 'player') await speak(pickLine(PLAYER_WIN_LINES), 'godzilla', { signal: vsignal() });
-            else if (result.winner === 'opponent') await speak(pickLine(OPPONENT_WIN_LINES), 'godzilla2', { signal: vsignal() });
+          // KEPT, not dropped: the done callback below waits on this.
+          finaleSpeech.current = (async () => {
+            await speak(stampText, 'announcer', { signal: fsignal() });
+            // He tapped SKIP, or muted, while the announcer was still going —
+            // do not then play the line he just asked to be rid of.
+            if (finaleCut.current) return;
+            if (result.winner === 'player') await speak(winLine, 'godzilla', { signal: fsignal() });
+            else if (result.winner === 'opponent') await speak(loseLine, 'godzilla2', { signal: fsignal() });
           })();
         },
       },
       { ms: 1300, run: () => undefined },
     ], () => {
       setWinner(result.winner ?? 'tie');
-      setPhaseTracked('results');
+      void holdForFinaleVoice();
     });
-  }, [map, opponentMonster, play, playerMonster, pushFX, requestNarration, setPhaseTracked, showCaption, triggerShake, vsignal]);
+  }, [fsignal, holdForFinaleVoice, map, opponentMonster, play, playerMonster, pushFX, requestNarration, setPhaseTracked, showCaption, triggerShake]);
 
   const beginRound = useCallback((n: number) => {
     roundRef.current = n;
@@ -642,6 +769,9 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
       seq.current = null;
       narrationAbort.current?.abort();
       voiceAbort.current?.abort();
+      // The finale has its own controller (see `finaleAbort`); unmounting
+      // mid-finale must not leave a clip still on its way to the speaker.
+      finaleAbort.current?.abort();
     };
     // Mount-only: the fight owns its own lifecycle from here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
