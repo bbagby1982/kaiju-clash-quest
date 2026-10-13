@@ -116,11 +116,42 @@ console.log('\n== 7. Whoever lands first wins, and only once ==');
   // resolve twice or throw.
   let release = null;
   const p = waitForLine(wait(5000), 120, (r) => { release = r; });
-  const how = await p;
+  // Keep OUR OWN copy: waitForLine nulls the caller's reference on the way
+  // out, so `release` is null by here and the old `if (release) release()`
+  // never ran — two of the advertised checks were literally `ok(true)`.
+  let mine = null;
+  const p2 = waitForLine(wait(5000), 120, (r) => { if (r) mine = r; });
+  const how = await p2;
   ok(how === 'capped', `the cap beat the slow line (${how})`);
-  assert.doesNotThrow(() => { if (release) release(); }, 'a late release must not throw');
-  ok(true, 'and a release arriving after the cap is harmless');
+  ok(typeof mine === 'function', 'we kept a reference to the releaser');
+  assert.doesNotThrow(() => mine(), 'a release arriving AFTER the cap does not throw');
+  ok(true, 'and is harmless — whoever lands first wins, exactly once');
   await wait(60);
+}
+
+console.log('\n== 8. A caller hook that throws cannot strand the screen ==');
+{
+  // `onRelease` is the caller's code. One that threw used to REJECT this
+  // promise, and one that threw from inside `done` left it pending forever —
+  // the results sheet would never appear, the one outcome the design forbids.
+  const boom = () => { throw new Error('caller exploded'); };
+  const a = await waitForLine(wait(40), 2000, boom);
+  ok(a === 'ended', `a hook that throws on the first call still resolves (${a})`);
+  const b = await waitForLine(null, 2000, boom);
+  ok(b === 'none', `and so does the no-line shortcut (${b})`);
+  let n = 0;
+  const c = await waitForLine(wait(40), 2000, () => { if (++n === 2) throw new Error('clear exploded'); });
+  ok(c === 'ended', `a hook that throws on the CLEAR call still resolves (${c})`);
+}
+
+console.log('\n== 9. A nonsense cap fails open, never into a stall ==');
+{
+  for (const cap of [0, -5000, NaN, undefined, Infinity]) {
+    const el = since();
+    const how = await waitForLine(wait(4000), cap);
+    ok(how === 'capped' && el() < 1500,
+      `cap=${String(cap)} → ${how} in ${el()}ms — no hold, and crucially no hang`);
+  }
 }
 
 console.log(`\n✅ ALL ${checks} VOICE-WAIT CHECKS PASSED`);

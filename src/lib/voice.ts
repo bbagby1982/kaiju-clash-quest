@@ -102,11 +102,18 @@ async function fetchClip(key: string, body: Record<string, unknown>, signal?: Ab
   }
 }
 
+// Every in-flight playOn's `finish`. `stopSpeaking()` calls them, because a
+// `pause()` fires no event and would otherwise leave the promise pending for
+// good: mute mid-finale used to hang the arena's victory line forever, and the
+// results sheet then waited out its whole 10s cap in silence (audit, 2026-10-12).
+const playing = new Set<() => void>();
+
 function playOn(el: HTMLAudioElement | null, url: string, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     if (!el) return resolve();
     let done = false;
-    const finish = () => { if (done) return; done = true; el.removeEventListener('ended', finish); el.removeEventListener('error', finish); resolve(); };
+    const finish = () => { if (done) return; done = true; playing.delete(finish); el.removeEventListener('ended', finish); el.removeEventListener('error', finish); resolve(); };
+    playing.add(finish);
     el.addEventListener('ended', finish);
     el.addEventListener('error', finish);
     if (signal) signal.addEventListener('abort', () => { try { el.pause(); } catch { /* ignore */ } finish(); }, { once: true });
@@ -123,6 +130,9 @@ function playOn(el: HTMLAudioElement | null, url: string, signal?: AbortSignal):
 
 export function stopSpeaking(): void {
   try { if (speechEl) { speechEl.pause(); speechEl.currentTime = 0; } } catch { /* ignore */ }
+  // SETTLE, don't just silence. A caller awaiting the line (the arena's
+  // finale hold) must learn it is over; `pause()` alone tells it nothing.
+  for (const finish of Array.from(playing)) { try { finish(); } catch { /* ignore */ } }
 }
 
 /** Mute-tap handler: stop BOTH the speech line and any roar in progress. */
@@ -215,8 +225,8 @@ export function useVoice() {
  *   3. someone calls the releaser handed to `onRelease` — the kid tapped
  *      "skip", which cuts the line on purpose.
  *
- * Never rejects: a line that throws is treated as a line that finished, for
- * the same reason speak() never rejects. `onRelease(null)` is always called on
+ * NEVER rejects and always settles — a line that throws is treated as a line
+ * that finished, and a caller hook that throws is swallowed. `onRelease(null)` is always called on
  * the way out so a caller can drop its reference and leave no live control
  * pointing at a finished wait.
  */
@@ -225,18 +235,26 @@ export function waitForLine(
   capMs: number,
   onRelease?: (release: (() => void) | null) => void,
 ): Promise<'ended' | 'capped' | 'released' | 'none'> {
-  if (!line) { onRelease?.(null); return Promise.resolve('none'); }
+  // EVERY call to the caller's hook is guarded. This function's whole promise
+  // is that it always resolves; an `onRelease` that threw used to reject it,
+  // or — thrown from inside `done` — leave it pending forever, which is the
+  // one outcome the design forbids (audit, 2026-10-12).
+  const tell = (r: (() => void) | null) => { try { onRelease?.(r); } catch { /* the caller's problem, never ours */ } };
+  if (!line) { tell(null); return Promise.resolve('none'); }
   return new Promise((resolve) => {
     let settled = false;
     const done = (how: 'ended' | 'capped' | 'released') => {
       if (settled) return;
       settled = true;
       clearTimeout(cap);
-      onRelease?.(null);
+      tell(null);
       resolve(how);
     };
-    const cap = setTimeout(() => done('capped'), Math.max(0, capMs));
-    onRelease?.(() => { stopSpeaking(); done('released'); });
+    // NaN/undefined would make setTimeout fire immediately — fail-open, never
+    // a stall, but a silent no-hold. Pin it to something meaningful instead.
+    const ms = Number.isFinite(capMs) ? Math.max(0, capMs as number) : 0;
+    const cap = setTimeout(() => done('capped'), ms);
+    tell(() => { stopSpeaking(); done('released'); });
     void Promise.resolve(line).then(() => done('ended'), () => done('ended'));
   });
 }

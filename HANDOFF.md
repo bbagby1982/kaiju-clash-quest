@@ -120,3 +120,59 @@ fire-and-forget and putting `kq-no-x` back.
 
 **Not verified on real hardware** — all measurements are headless Chromium at
 390×844 with `env(safe-area-inset-*)` at 0.
+
+
+### 2026-10-12, later — the audit said no, and was right
+
+A pre-merge adversarial audit of the above found it **not safe to merge**. The
+diagnoses held; the implementation had two user-visible regressions, a flaky
+proof, and four vacuous assertions. All fixed:
+
+- **Muting mid-finale froze the results for the whole 10s cap.** `stopSpeaking()`
+  only `pause()`d, and `playOn` resolves on `ended`/`error`/`abort` — a pause is
+  none of them, so the awaited line hung forever. Measured: **12,788 ms of dead
+  arena in silence** after one tap on the speaker icon, escapable only by
+  finding the caption bar. Fixed at the root: `stopSpeaking()` now settles
+  every in-flight `playOn`. Re-measured after the fix: **2,789 ms**, and
+  reverting the settle reproduces 12,780 ms.
+- **"TAP TO SKIP" during the finale took two taps.** The beats run ~2.8 s, during
+  which the hold has not started and `releaseFinale` is null — so the first tap
+  flushed the animation and then *began* a 4-10 s wait. Measured: 6,551 ms
+  tapped vs 6,588 ms untapped; the tap bought nothing. `finaleCut` now cuts the
+  voice and the hold that has not begun. **649 ms** after the fix.
+- **The e2e failed ~4 runs in 5 and blamed the fix.** It detected the finale by
+  `\bvictory\b` over the page text, but a player win reads "stands
+  *victorious*" and VICTORY/DEFEAT/TIE exist only inside the results sheet,
+  which the loop breaks on first. So whenever Alfred won it reported
+  `held = -1` with the message "the results sheet cut the voice off". It now
+  keys off `.arena-caption-text` matching the three real `localFinale` shapes.
+  **4/4 clean runs.**
+- **Five realistic mutations kept the whole suite green**, including swapping
+  `kq-no-x` for Tailwind's `overflow-x-hidden`, which put the owner's
+  encyclopedia bug back in full. Causes: an assertion anchored on `}` where the
+  code has `]` (it matched nothing, ever, including main's pre-fix source); a
+  slice that ran to end-of-file and found `requestNarration`'s identical
+  `if (!mounted.current) return;`; and a guard that asserted a class name's
+  absence rather than the property. All three fixed, plus two `ok(true)` lines
+  in `voiceWait`.
+- **The same root cause sat on four more screens.** `BattleSetup`,
+  `BattlePreview` and both `BattleFocusSelection` roots each paired `kq-no-x`
+  with a sticky header holding their ONLY way out — no bottom nav, they render
+  outside `GameLayout`. Alfred passes `BattleSetup` on every battle. Removed
+  there too. `MonsterProfile` keeps it correctly: it is `fixed inset-0
+  overflow-y-auto`, its own scroll container by design.
+- `waitForLine` now guards both `onRelease` calls and sanitises a non-finite
+  cap; `holdForFinaleVoice` catches. Nothing about the voice can strand the
+  sheet.
+- The winner's line is **preloaded** at `startFinale`. It is picked at random
+  per battle, so it was always a cache miss and its ElevenLabs round trip
+  happened *inside* the hold — the cap arithmetic never budgeted for it.
+
+**One claim in the first cut was wrong:** "lint 0 errors (20 pre-existing
+warnings)" — main has 19; that PR added the 20th. The missing dependency is
+added and the count is back to 19.
+
+**M3's before/after numbers for the four extra roots are the auditor's, not
+re-measured here** — my own probe was not landing on the same screen twice, so
+I removed it rather than cite it. The change rests on the identical CSS
+mechanism, conclusively measured on `GameLayout`.

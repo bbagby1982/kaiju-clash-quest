@@ -91,7 +91,7 @@ export function BattlePreview({ playerMonster, opponentMonster, battleFocus, map
   const opponentHasTerrainBonus = opponentMonster.terrainBonus?.includes(map.terrain);
 
   return (
-    <div className="min-h-screen flex flex-col bg-background kq-no-x kq-screen-in">
+    <div className="min-h-screen flex flex-col bg-background kq-screen-in">
       {/* Header */}
       <div className="sticky top-0 z-20 flex items-center gap-3 px-4 py-3 bg-background/85 backdrop-blur-md border-b border-border kq-safe-top">
         <button

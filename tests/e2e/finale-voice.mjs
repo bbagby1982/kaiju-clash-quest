@@ -90,7 +90,7 @@ const BACKWARDS = '^(go back|back|cancel|close|mute|unmute|sound)';
  * the first control that looks like "go on", never the bottom nav. Returns how
  * long the results sheet took to appear after the finale stamp.
  */
-async function playOneBattle(label) {
+async function playOneBattle(label, opts = {}) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const page = await ctx.newPage();
   const errors = [];
@@ -132,9 +132,34 @@ async function playOneBattle(label) {
       resultsAt = Date.now(); break;
     }
     if (!finaleAt) {
-      const stamped = await page.evaluate(() =>
-        /\b(wins|victory|draw|tie|defeat)\b/i.test(document.body.innerText || '')).catch(() => false);
-      if (stamped) finaleAt = Date.now();
+      // Key off the ARENA'S OWN caption, not words in the page text. The first
+      // cut matched /\b(wins|victory|draw|tie|defeat)\b/ over document.body —
+      // but on a PLAYER win the finale caption reads "stands victori-OUS",
+      // which that never matched, and the words VICTORY/DEFEAT/TIE exist only
+      // inside the results sheet, which the loop breaks on first. So the run
+      // failed whenever Alfred won, and its message read exactly like the
+      // owner's bug being back. Measured: 4 of 5 invocations.
+      const stamped = await page.evaluate(() => {
+        const c = document.querySelector('.arena-caption-text');
+        const t = (c && c.textContent) || '';
+        // The three shapes of localFinale(), and nothing else.
+        return /stands victorious|lands the final blow|still standing as the dust settles/i.test(t);
+      }).catch(() => false);
+      if (stamped) {
+        finaleAt = Date.now();
+        if (opts.muteAtFinale) {
+          await page.waitForTimeout(900);   // let the announcer get going
+          await page.evaluate(() => {
+            const b = [...document.querySelectorAll('button')]
+              .find(e => /mute|sound|voice/i.test(e.getAttribute('aria-label') || ''));
+            if (b) b.click();
+          }).catch(() => {});
+        }
+        if (opts.skipAtFinale) {
+          await page.waitForTimeout(500);
+          await page.locator('.arena-caption').first().click({ force: true }).catch(() => {});
+        }
+      }
     }
     const cmd = page.locator('.arena-cmd').first();
     if (await cmd.isVisible().catch(() => false)) { rounds++; await cmd.click({ force: true }); await page.waitForTimeout(1000); }
@@ -151,9 +176,24 @@ console.log('— run 1: the voice works —');
 mode = 'voice';
 const withVoice = await playOneBattle('with voice');
 console.log(`  rounds ${withVoice.rounds} · finale stamp → results sheet: ${withVoice.held}ms (clip is ${CLIP_SECONDS * 1000}ms)`);
+assert.ok(withVoice.held > 0, 'the finale caption was never detected — this run proves nothing (fix the detector, do not blame the fix)');
 assert.ok(withVoice.held >= CLIP_SECONDS * 1000,
   `the results sheet cut the voice off: it arrived ${withVoice.held}ms after the finale stamp, inside a ${CLIP_SECONDS * 1000}ms clip`);
 assert.ok(withVoice.held < 15000, `the cap is not holding: ${withVoice.held}ms`);
+
+// ── H1: muting mid-finale must not freeze the results for the whole cap ───
+// `stopSpeaking()` used to only pause(); playOn resolves on ended/error/abort
+// and a pause is none of those, so the in-flight line hung forever and the cap
+// was the only exit. Measured before the fix: 12,788ms of dead arena in
+// silence, one tap on the speaker icon. The fight is over and an 8-year-old is
+// staring at nothing.
+console.log('— run 1b: he mutes while the announcer is talking —');
+mode = 'voice';
+const muted = await playOneBattle('muted mid-finale', { muteAtFinale: true });
+console.log(`  rounds ${muted.rounds} · finale stamp → results sheet: ${muted.held}ms`);
+assert.ok(muted.held > 0, 'the finale caption was never detected in the mute run');
+assert.ok(muted.held < 6000,
+  `muting mid-finale froze the results for ${muted.held}ms — stopSpeaking() is not settling the line`);
 
 console.log('— run 2: no voice at all (503, or a muted kid) —');
 mode = 'silent';
@@ -162,7 +202,24 @@ console.log(`  rounds ${silent.rounds} · finale stamp → results sheet: ${sile
 assert.ok(silent.held >= 0 && silent.held < 6000,
   `with no voice there is nothing to wait for — the sheet must come straight away, took ${silent.held}ms`);
 
-console.log('\n✅ the winner finishes their line, and the fight still ends either way');
+// ── M1: ONE tap on "TAP TO SKIP" during the finale must be enough ─────────
+// The finale's beats run ~2.8s, during which the hold has not started and
+// `releaseFinale` is null — so the tap took the ordinary skip path, flushed
+// the animation, and then BEGAN the wait. Measured before the fix: 6,551ms
+// with the tap vs 6,588ms without. It bought nothing, and took two.
+console.log('— run 3: one tap on TAP TO SKIP during the finale —');
+mode = 'voice';
+const skipped = await playOneBattle('skipped at finale', { skipAtFinale: true });
+console.log(`  rounds ${skipped.rounds} · finale stamp → results sheet: ${skipped.held}ms`);
+assert.ok(skipped.held > 0, 'the finale caption was never detected in the skip run');
+// ABSOLUTE, not relative to the untapped run: removing the cut leaves the
+// tapped time within noise of the untapped one, which a `<` comparison can
+// still pass by luck. One tap must get the sheet up promptly — well inside a
+// single clip, let alone the two-clip chain.
+assert.ok(skipped.held < 2500,
+  `one tap on SKIP did not skip: the sheet took ${skipped.held}ms (untapped was ${withVoice.held}ms)`);
+
+console.log('\n✅ the winner finishes their line, a skip really skips, a mute really mutes, and the fight always ends');
 await browser.close();
 server.close();
 process.exit(0);

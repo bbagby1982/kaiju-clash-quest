@@ -28,7 +28,7 @@ import { MonsterSprite, SpriteState } from './MonsterSprite';
 import { ArenaBackdrop } from './arena/ArenaBackdrop';
 import { BattleFXLayer, FXItem, FXSpec, fxColor, fxShapeForAbility } from './arena/BattleFX';
 import { HPBar } from './arena/HPBar';
-import { preloadRoar, roar, speak, waitForLine, useVoice } from '@/lib/voice';
+import { preloadRoar, preloadSpeech, roar, speak, stopSpeaking, waitForLine, useVoice } from '@/lib/voice';
 import {
   Beat,
   CHOICES,
@@ -200,6 +200,14 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
   // over by then, so skip() alone would return early and the tap would be
   // dead. A dead control is never the answer; it must always do something.
   const releaseFinale = useRef<(() => void) | null>(null);
+  // Set when the kid cuts the finale short BEFORE the hold has started. The
+  // finale's beats run 300/1200/1300ms, so "TAP TO SKIP" is on screen for
+  // ~2.8s during which `releaseFinale` is still null — the tap took the
+  // ordinary skip path, flushed the animation, and then STARTED a 4-10s wait.
+  // Measured: the tap bought nothing (6551ms vs 6588ms without it); it took
+  // two. A control that advertises SKIP and then lengthens the wait is worse
+  // than a dead one (audit, 2026-10-12).
+  const finaleCut = useRef(false);
   const captionRef = useRef('');
   /** Speaks `text` once per token; resolves when it's done (or immediately if skipped). */
   const narrateOnce = useCallback((token: number, text: string): Promise<void> => {
@@ -293,6 +301,9 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
     if (releaseFinale.current) { releaseFinale.current(); return; }
     const s = seq.current;
     if (!s) return;
+    // Mid-finale: cut the voice AND the hold that has not begun yet, so one
+    // tap really is one tap.
+    if (phaseRef.current === 'finale') { finaleCut.current = true; stopSpeaking(); }
     clearTimers();
     seq.current = null;
     suppressVisuals.current = true;
@@ -321,9 +332,17 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
   const holdForFinaleVoice = useCallback(async () => {
     const spoken = finaleSpeech.current;
     finaleSpeech.current = null;
-    // The race itself lives in voice.ts so it can be executed by a test
-    // without a browser or a React tree — see tests/voiceWait.test.mjs.
-    await waitForLine(spoken, FINALE_VOICE_MAX_MS, (release) => { releaseFinale.current = release; });
+    // He already asked to skip, before the hold existed. Honour it.
+    if (!finaleCut.current) {
+      // The race itself lives in voice.ts so it can be executed by a test
+      // without a browser or a React tree — see tests/voiceWait.test.mjs.
+      // Wrapped: nothing about the voice may ever leave a finished fight
+      // without its results sheet.
+      try {
+        await waitForLine(spoken, FINALE_VOICE_MAX_MS, (release) => { releaseFinale.current = release; });
+      } catch { /* a hold that fails is still a hold that is over */ }
+      releaseFinale.current = null;
+    }
     if (!mounted.current) return;
     setPhaseTracked('results');
   }, [setPhaseTracked]);
@@ -516,9 +535,20 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
   /* ── phases ─────────────────────────────────────────────────────────── */
   const startFinale = useCallback((result: RoundResult) => {
     setPhaseTracked('finale');
+    finaleCut.current = false;
     const koed = result.playerHP <= 0 || result.opponentHP <= 0;
     const stampText = koed ? 'K.O.!' : "TIME'S UP";
     const stampColor = koed ? '#ff3d00' : '#eab308';
+    // PICK the winner's line now and PREFETCH it. It is chosen at random per
+    // battle, so it was always a cache miss — and its ElevenLabs round trip
+    // then happened INSIDE the hold, which the 10s cap never budgeted for. On
+    // a slow phone that fetch is what clips a real line. Picking it here also
+    // means the chain below speaks the same line we warmed, not a new draw.
+    const winLine  = pickLine(PLAYER_WIN_LINES);
+    const loseLine = pickLine(OPPONENT_WIN_LINES);
+    preloadSpeech(stampText, 'announcer');
+    if (result.winner === 'player') preloadSpeech(winLine, 'godzilla');
+    else if (result.winner === 'opponent') preloadSpeech(loseLine, 'godzilla2');
 
     requestNarration('finale', {
       round: result.round,
@@ -550,8 +580,11 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
           // KEPT, not dropped: the done callback below waits on this.
           finaleSpeech.current = (async () => {
             await speak(stampText, 'announcer', { signal: vsignal() });
-            if (result.winner === 'player') await speak(pickLine(PLAYER_WIN_LINES), 'godzilla', { signal: vsignal() });
-            else if (result.winner === 'opponent') await speak(pickLine(OPPONENT_WIN_LINES), 'godzilla2', { signal: vsignal() });
+            // He tapped SKIP, or muted, while the announcer was still going —
+            // do not then play the line he just asked to be rid of.
+            if (finaleCut.current) return;
+            if (result.winner === 'player') await speak(winLine, 'godzilla', { signal: vsignal() });
+            else if (result.winner === 'opponent') await speak(loseLine, 'godzilla2', { signal: vsignal() });
           })();
         },
       },
@@ -560,7 +593,7 @@ export function BattleSimulation({ playerMonster, opponentMonster, battleFocus, 
       setWinner(result.winner ?? 'tie');
       void holdForFinaleVoice();
     });
-  }, [map, opponentMonster, play, playerMonster, pushFX, requestNarration, setPhaseTracked, showCaption, triggerShake, vsignal]);
+  }, [holdForFinaleVoice, map, opponentMonster, play, playerMonster, pushFX, requestNarration, setPhaseTracked, showCaption, triggerShake, vsignal]);
 
   const beginRound = useCallback((n: number) => {
     roundRef.current = n;

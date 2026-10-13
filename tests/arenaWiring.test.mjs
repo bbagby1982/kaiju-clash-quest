@@ -65,15 +65,31 @@ ok(!/void \(async \(\) => \{\s*await speak\(stampText/.test(ARENA),
   'and the old fire-and-forget `void (async …)` finale is gone');
 ok(/void holdForFinaleVoice\(\);/.test(ARENA),
   'the finale sequence ends by going through the hold, not straight to the sheet');
-ok(!/\}\s*,\s*\(\) => \{\s*setWinner\([^)]*\);\s*setPhaseTracked\('results'\);/.test(ARENA.replace(/\s+/g, ' ')),
+// The step list closes with `]`, not `}` — anchored on `}` this matched
+// NOTHING, including main's own pre-fix source, so it would have stayed green
+// through a full revert of the fix (audit, 2026-10-12).
+ok(!/\]\s*,\s*\(\) => \{\s*setWinner\([^)]*\);\s*setPhaseTracked\('results'\);/.test(ARENA.replace(/\s+/g, ' ')),
   'nothing jumps to the results sheet the instant the beats are over');
+// ...and prove the regex can actually fire, so it never silently rots again.
+ok(/\]\s*,\s*\(\) => \{\s*setWinner\([^)]*\);\s*setPhaseTracked\('results'\);/
+     .test("], () => { setWinner(result.winner ?? 'tie'); setPhaseTracked('results');"),
+  'and that check is anchored on something that exists — it matches the shape it forbids');
 ok(/waitForLine\(spoken, FINALE_VOICE_MAX_MS/.test(ARENA),
   'the hold uses the tested race with an explicit cap');
 const cap = /const FINALE_VOICE_MAX_MS = (\d+);/.exec(ARENA);
 ok(cap && Number(cap[1]) >= 4000 && Number(cap[1]) <= 20000,
   `the cap is a sane number of seconds — long enough for two clips, short enough to never strand a kid (${cap && cap[1]}ms)`);
-ok(/if \(!mounted\.current\) return;/.test(ARENA.slice(ARENA.indexOf('holdForFinaleVoice'))),
-  'and it checks the arena is still mounted before showing anything');
+// SCOPED to the callback body. Sliced to end-of-file it also found
+// `requestNarration`'s identical line, so deleting the real guard kept it green.
+{
+  const i = ARENA.indexOf('const holdForFinaleVoice');
+  const body = ARENA.slice(i, ARENA.indexOf('}, [setPhaseTracked]);', i));
+  ok(i > 0 && body.length > 40 && body.length < 1200, `the hold's body was isolated (${body.length} chars)`);
+  ok(/if \(!mounted\.current\) return;/.test(body),
+    'and it checks the arena is still mounted before showing anything');
+  ok(/finaleCut\.current/.test(body), 'and honours a skip that happened before the hold began');
+  ok(/catch/.test(body), 'and a throw inside the wait can never strand the results sheet');
+}
 
 console.log('\n== 2. "TAP TO SKIP" stays a live control during that wait ==');
 // The beat sequence is finished by then, so skip()'s `if (!seq.current) return`
@@ -100,9 +116,38 @@ const rootDiv = /<div className="min-h-screen flex flex-col bg-background([^"]*)
 ok(rootDiv, 'the layout root is where it was expected');
 ok(rootDiv && !/kq-no-x/.test(rootDiv[1]),
   'and it does NOT carry kq-no-x — that is what un-stuck both of them');
+// Asserting the absence of one CLASS NAME is not the property. Swapping in
+// Tailwind's `overflow-x-hidden` reinstated the bug in full (measured: header
+// -600, nav 11193 at scrollY 600) with the whole suite green. What matters is
+// that NOTHING on that root makes it a scroll container.
+ok(rootDiv && !/overflow-x-hidden|overflow-hidden|overflow-x-clip|overflow-auto|overflow-y-/.test(rootDiv[1]),
+  'and carries no other overflow utility either — any of them re-breaks sticky: ' + (rootDiv && rootDiv[1]));
 ok(/<main key=\{activeTab\} className="[^"]*kq-no-x/.test(LAYOUT),
   'the clipping still happens on <main>, where wide content actually lives');
 ok(/\.kq-no-x\s*\{[^}]*overflow-x:\s*hidden/.test(CSS),
-  'kq-no-x itself is unchanged — other screens still rely on it');
+  'kq-no-x itself is unchanged — MonsterProfile still relies on it');
+
+// The same root cause sat on four MORE full-screen views, each pairing
+// kq-no-x on a min-h-screen root with a sticky header holding the ONLY way
+// out — no bottom nav, because they render outside GameLayout. Measured at
+// 390x844 with a full roster, BattleSetup's Back button sat at y -605 once
+// scrolled. Alfred passes through that screen on every single battle.
+['BattleSetup', 'BattlePreview', 'BattleFocusSelection'].forEach((name) => {
+  const src = stripComments(read(`src/components/game/${name}.tsx`));
+  const roots = src.match(/className="min-h-screen[^"]*"/g) || [];
+  ok(roots.length > 0, `${name} has a full-screen root`);
+  roots.forEach((r) => ok(!/kq-no-x|overflow-x-hidden|overflow-hidden/.test(r),
+    `${name}'s root does not re-break its own sticky header: ${r}`));
+  ok(/sticky top-0/.test(src), `${name} still has the sticky header that holds its Back button`);
+});
+// MonsterProfile is the one that KEEPS it, and correctly: it is
+// `fixed inset-0 overflow-y-auto`, its own scroll container by design, so its
+// sticky close button sticks inside it. Measured on screen at y 16.
+{
+  const mp = stripComments(read('src/components/game/MonsterProfile.tsx'));
+  ok(/fixed inset-0[^"]*overflow-y-auto/.test(mp),
+    'MonsterProfile is its own scroll container, so kq-no-x there is harmless');
+  ok(/kq-sticky-close/.test(mp), 'and its close button sticks inside that scroller');
+}
 
 console.log(`\n✅ ALL ${checks} ARENA-WIRING CHECKS PASSED`);
